@@ -20,7 +20,9 @@ fn gh(args: &[&str], token: Option<&str>) -> Result<String, String> {
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
     }
-    let out = cmd.output().map_err(|e| format!("gh não encontrado ({e})"))?;
+    let out = cmd
+        .output()
+        .map_err(|e| format!("gh não encontrado ({e})"))?;
     if !out.status.success() {
         return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
     }
@@ -28,8 +30,9 @@ fn gh(args: &[&str], token: Option<&str>) -> Result<String, String> {
 }
 
 fn updater(app: &AppHandle) -> Result<Updater, String> {
-    let token = gh(&["auth", "token", "--user", GH_USER], None)
-        .map_err(|e| format!("faça `gh auth login` com a conta {GH_USER} para receber atualizações ({e})"))?;
+    let token = gh(&["auth", "token", "--user", GH_USER], None).map_err(|e| {
+        format!("faça `gh auth login` com a conta {GH_USER} para receber atualizações ({e})")
+    })?;
     // Repo privado: o latest.json só sai pela API de assets, então o endpoint muda a cada release.
     let manifest = gh(
         &[
@@ -59,7 +62,10 @@ pub struct UpdateInfo {
 #[tauri::command]
 pub async fn check_update(app: AppHandle) -> Result<Option<UpdateInfo>, String> {
     let update = updater(&app)?.check().await.map_err(|e| e.to_string())?;
-    Ok(update.map(|u| UpdateInfo { version: u.version, notes: u.body }))
+    Ok(update.map(|u| UpdateInfo {
+        version: u.version,
+        notes: u.body,
+    }))
 }
 
 #[tauri::command]

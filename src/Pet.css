@@ -1,0 +1,77 @@
+html.pet-document,.pet-document body,.pet-document #root{background:transparent!important;margin:0;width:100%;height:100%;overflow:hidden}
+.pet-stage{height:100%;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding:10px 14px 12px;gap:8px;font-family:Inter,sans-serif;color:#f4f4f5;box-sizing:border-box;background:transparent;pointer-events:none}
+.pet-bubble,.pet-toolbar,.pet-composer,.pet-list,.pet-error-box{background:rgba(25,25,28,.94);border:1px solid #ffffff1c;box-shadow:0 5px 18px #0004;backdrop-filter:blur(20px)}
+.pet-bubble-wrap,.pet-bubble,.pet-toolbar,.pet-composer,.pet-list,.pet-error-box,.pet-character{pointer-events:auto}
+.pet-content{flex-shrink:0;width:100%;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none}
+.pet-stage.align-left,.align-left .pet-content{align-items:flex-start}
+.pet-stage.align-right,.align-right .pet-content{align-items:flex-end}
+.pet-stage.align-center,.align-center .pet-content{align-items:center}
+.pet-stage svg{width:17px;height:17px;display:block;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+
+.pet-bubble-wrap{width:100%;padding:10px 0 0 8px;position:relative;box-sizing:border-box;z-index:2}
+.pet-bubble{width:100%;min-height:54px;border-radius:28px;padding:8px 10px 8px 15px;display:flex;align-items:center;position:relative;box-sizing:border-box;overflow:visible}
+.pet-bubble-copy{border:0;background:none;color:inherit;text-align:left;cursor:pointer;min-width:0;flex:1;padding:0}
+.pet-bubble-copy:disabled{cursor:default}
+.pet-bubble b,.pet-bubble small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pet-bubble b{font-size:12px;padding-right:8px}
+.pet-bubble b span{color:#57d696;margin-right:6px}
+.pet-bubble.active b span{color:#a8caff}
+.pet-bubble small{color:#aeb0b6;margin-top:3px;font-size:11px;padding-right:8px}
+.pet-bubble-close{position:absolute;left:0;top:0;width:18px;height:18px!important;padding:3px!important;border:0;border-radius:50%;background:#343438!important;color:#fff;cursor:pointer;z-index:3}
+.pet-bubble-close svg{width:12px;height:12px}
+.pet-action-buttons{display:flex;gap:6px;align-items:center}
+.pet-action-buttons button{border:0;background:#303035;color:#bfc1c7;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;cursor:pointer}
+.pet-action-buttons button:hover{background:#3b3b41;color:#fff}
+.pet-action-buttons button:last-child{color:#c7c9ce}
+
+.pet-character{position:relative;cursor:grab;touch-action:none;width:130px;height:133px;display:grid;place-items:center;user-select:none;-webkit-user-select:none}
+.pet-character:active{cursor:grabbing}
+.pet-sprite{width:125px;height:125px;background-image:url('/pet/lume-atlas.png');background-size:400% 400%;background-repeat:no-repeat;image-rendering:pixelated;transform:rotate(var(--look,0deg));transform-origin:50% 85%;transition:transform .18s;position:relative;z-index:1;pointer-events:none}
+.pet-sprite.large{width:160px;height:160px}
+.pet-treadmill{position:absolute;bottom:0;left:11px;width:108px;height:13px;background:#192e40;border:2px solid #426282;border-radius:9px;box-shadow:0 4px 0 #0a101b;overflow:hidden;pointer-events:none}
+.pet-treadmill div{height:5px;background:repeating-linear-gradient(90deg,#91aabe 0 2px,#34516a 2px 12px);animation:belt .45s linear infinite}
+@keyframes belt{to{transform:translateX(-12px)}}
+.pet-sprite.pet-sleeping{filter:saturate(.55);transform:rotate(8deg) scale(.92)}
+.pet-sprite.pet-error{filter:hue-rotate(330deg)}
+.pet-sprite.pet-listening{filter:drop-shadow(0 0 7px #55c5fc88)}
+.pet-sprite.pet-dragging{transform:rotate(-9deg)}
+.pet-zzz{position:absolute;right:0;top:0;color:#bfdfff;letter-spacing:3px}
+
+.pet-toolbar{display:flex;align-items:center;gap:1px;padding:3px 6px;border-radius:24px;transition:opacity .16s,transform .16s}
+.align-left .pet-toolbar{align-self:flex-start}
+.align-center .pet-toolbar{align-self:center}
+.align-right .pet-toolbar{align-self:flex-end}
+.state-idle .pet-toolbar,.state-sleeping .pet-toolbar{opacity:0;transform:translateY(4px);pointer-events:none}
+.state-idle.controls-visible .pet-toolbar,.state-sleeping.controls-visible .pet-toolbar,.pet-toolbar:focus-within{opacity:1;transform:none;pointer-events:auto}
+.pet-toolbar button,.pet-list button,.pet-error-box button,.pet-composer button{border:0;background:none;color:inherit;cursor:pointer;font:inherit}
+.pet-toolbar button{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;padding:6px}
+.pet-toolbar button:hover{background:#ffffff16}
+.pet-toolbar button:disabled{opacity:.45}
+.pet-toolbar>span{width:1px;height:15px;background:#ffffff30;margin:0 4px}
+
+.pet-composer{width:100%;border-radius:24px;padding:6px;box-sizing:border-box;position:relative}
+.pet-compose-options{position:static;display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:4px 2px 8px;margin-bottom:4px;border-bottom:1px solid #ffffff14}
+.pet-compose-options select:last-child{grid-column:1/-1}
+.pet-composer select{border:0;color:#caccd2;background:#29292e;border-radius:8px;min-width:0;padding:6px;font:inherit;font-size:11px}
+.pet-input{display:flex;align-items:center;gap:4px}
+.pet-input input{background:transparent;border:0;outline:0;color:white;flex:1;min-width:0;padding:7px 3px;font:inherit;font-size:12px}
+.pet-input input::placeholder{color:#777a80}
+.pet-input button{border-radius:50%;background:#303035;width:31px;height:31px;display:grid;place-items:center;padding:7px;color:#aeb1b8}
+.pet-input button.selected{background:#44444a;color:#fff}
+.pet-input button.send{background:#245a9a;color:#dbeaff}
+.pet-input button:disabled{opacity:.4}
+
+.pet-list{width:100%;max-height:205px;overflow:auto;border-radius:18px;padding:9px;box-sizing:border-box}
+.pet-list header{display:flex;justify-content:space-between;align-items:center;font-size:12px;margin-bottom:7px;padding-left:4px}
+.pet-list header button{padding:4px}
+.pet-list .pet-session{width:100%;text-align:left;padding:7px;display:flex;gap:8px;align-items:center;border-radius:8px;font-size:11px}
+.pet-session:hover{background:#ffffff12}
+.pet-session>span:nth-child(2){white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+.pet-session small{display:block;color:#999;margin-top:2px}
+.pet-running-dot{width:6px;height:6px;background:#78b4ff;border-radius:50%}
+.pet-error-box{width:100%;padding:8px 10px;box-sizing:border-box;border-radius:12px;display:flex;align-items:center;gap:8px;font-size:10px;max-height:70px;overflow:auto;color:#ffb7ae}
+.pet-error-box span{flex:1}
+.pet-error-box button{padding:3px}
+.pet-error-box svg{width:13px;height:13px}
+
+@media(prefers-reduced-motion:reduce){.pet-treadmill div{animation:none}.pet-sprite,.pet-toolbar{transition:none}}
