@@ -50,7 +50,9 @@ jobs:
           gh release create $tag $exe.FullName --title "Lume $tag" --notes "$notes"
 
           # Repo privado: o app baixa pela API de assets (link de download normal exige login no navegador)
-          $assetUrl = gh api "repos/${{ github.repository }}/releases/tags/$tag" --jq ".assets[] | select(.name == \`"$($exe.Name)\`") | .url"
+          $jq = '.assets[] | select(.name == "' + $exe.Name + '") | .url'
+          $assetUrl = gh api "repos/${{ github.repository }}/releases/tags/$tag" --jq $jq
+          if (-not $assetUrl) { throw "não achei a URL de API do asset $($exe.Name)" }
           @{
             version  = $tag.TrimStart("v")
             notes    = $notes.Trim()

@@ -78,6 +78,7 @@ export default function App() {
       <main className="content">
         <h1>Sessões</h1>
         <p className="muted">Claude Code, Codex e Antigravity, organizados por projeto.</p>
+        <p className="muted">Esta versão chegou pela atualização automática.</p>
       </main>
     </div>
   );

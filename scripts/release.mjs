@@ -1,5 +1,5 @@
 // Uso: npm run release -- 0.2.0 "o que mudou"
-// Sobe a versão no package.json, commita, cria a tag e dá push — o GitHub Actions faz o resto.
+// Sobe a versão no package.json, commita tudo que mudou, cria a tag e dá push — o GitHub Actions faz o resto.
 import { readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 
@@ -15,7 +15,7 @@ pkg.version = version;
 writeFileSync("package.json", JSON.stringify(pkg, null, 2) + "\n");
 execFileSync("npm", ["install", "--package-lock-only", "--silent"], { stdio: "inherit", shell: true });
 
-git("add", "package.json", "package-lock.json");
+git("add", "-A"); // a release leva tudo que mudou desde a última
 git("commit", "-m", `v${version}${msg.length ? `: ${msg.join(" ")}` : ""}`);
 git("tag", `v${version}`);
 git("push");
