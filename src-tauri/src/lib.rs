@@ -15,6 +15,7 @@ pub fn run() {
     // provedor de criptografia do rustls para as chamadas HTTPS (uso do Claude); o mesmo do atualizador
     let _ = rustls::crypto::ring::default_provider().install_default();
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -28,8 +29,10 @@ pub fn run() {
             sessions::transcript,
             sessions::session_activity,
             codex::codex_catalog,
+            codex::codex_integrations,
             codex::codex_manage,
             live::live_snapshot,
+            live::live_set_mode,
             live::live_respond,
             pet::pet_toggle,
             pet::pet_place,
@@ -39,6 +42,8 @@ pub fn run() {
             sessions::new_session,
             sessions::open_folder,
             sessions::search_content,
+            sessions::git_info,
+            sessions::read_image,
             live::live_send,
             live::live_answer,
             live::live_interrupt,

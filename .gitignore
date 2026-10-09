@@ -25,3 +25,7 @@ dist-ssr
 
 # Python (POC)
 __pycache__/
+
+# Saídas locais de testes
+output/
+.playwright-cli/

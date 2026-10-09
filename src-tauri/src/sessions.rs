@@ -52,6 +52,8 @@ pub struct Message {
     removed: u32,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     images: Vec<String>, // data URLs
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timestamp: Option<i64>,
 }
 
 #[derive(Serialize)]
@@ -64,6 +66,8 @@ pub struct Transcript {
     has_more: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     model: Option<String>, // modelo da última resposta (Claude), para o seletor mostrar o nome real
+    #[serde(skip_serializing_if = "Option::is_none")]
+    context: Option<(u64, u64)>, // janela de contexto: (tokens em uso, limite)
 }
 
 #[derive(Default)]
@@ -405,7 +409,8 @@ fn list_sessions_sync(app: &AppHandle, archived: bool) -> Result<Vec<Session>, S
     let mut map = store.sessions.lock().unwrap();
     // Keep a newly created thread until its first persisted rollout becomes visible.
     for s in map.values() {
-        if s.file.is_none() && !all.iter().any(|x| x.provider == s.provider && x.id == s.id) {
+        // (o Antigravity já nasce com o caminho do log, mas o arquivo só aparece depois)
+        if s.file.as_ref().map_or(true, |f| !f.exists()) && !all.iter().any(|x| x.provider == s.provider && x.id == s.id) {
             all.push(s.clone());
         }
     }
@@ -602,10 +607,14 @@ impl Thread {
         }
     }
     fn msg(&mut self, role: &'static str, text: String, images: Vec<String>) {
+        self.msg_with_time(role, text, images, None);
+    }
+    fn msg_with_time(&mut self, role: &'static str, text: String, images: Vec<String>, timestamp: Option<i64>) {
         self.push(Message {
             role,
             text,
             images,
+            timestamp,
             ..Default::default()
         });
     }
@@ -615,6 +624,11 @@ impl Thread {
             self.tools.insert(id.to_string(), self.out.len() - 1);
         }
     }
+}
+
+fn parse_rfc3339(s: Option<&str>) -> Option<i64> {
+    s.and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
+        .map(|dt| dt.timestamp_millis())
 }
 
 fn read_messages(s: &Session, path: &Path) -> std::io::Result<Vec<Message>> {
@@ -647,6 +661,7 @@ fn read_messages(s: &Session, path: &Path) -> std::io::Result<Vec<Message>> {
 
 fn claude_line(t: &mut Thread, o: &Value) {
     let content = &o["message"]["content"];
+    let ts = parse_rfc3339(o["timestamp"].as_str().or_else(|| o["message"]["timestamp"].as_str()));
     if o["type"] == "user" && o["isMeta"] != true {
         // saída de ferramenta volta numa mensagem "user" com tool_result
         for c in content
@@ -662,15 +677,16 @@ fn claude_line(t: &mut Thread, o: &Value) {
         }
         let text = text_of(content);
         if !text.starts_with('<') {
-            t.msg("user", text, claude_images(content));
+            t.msg_with_time("user", text, claude_images(content), ts);
         }
     } else if o["type"] == "assistant" {
         for c in content.as_array().into_iter().flatten() {
             match c["type"].as_str() {
-                Some("text") => t.msg(
+                Some("text") => t.msg_with_time(
                     "assistant",
                     c["text"].as_str().unwrap_or_default().into(),
                     vec![],
+                    ts,
                 ),
                 Some("tool_use") => {
                     let input = &c["input"];
@@ -951,7 +967,8 @@ fn clean_antigravity_user_prompt(s: &str) -> String {
             return after.trim().to_string();
         }
     }
-    if text.contains("<SYSTEM_MESSAGE>") || text.starts_with("The following is a <SYSTEM_MESSAGE>") {
+    if text.contains("<SYSTEM_MESSAGE>") || text.starts_with("The following is a <SYSTEM_MESSAGE>")
+    {
         return String::new();
     }
     text.to_string()
@@ -972,16 +989,13 @@ fn arg_str(args: &Value, key: &str) -> String {
     match &args[key] {
         Value::String(s) => unquote_str(s),
         Value::Null => String::new(),
-        other => other
-            .as_str()
-            .map(unquote_str)
-            .unwrap_or_else(|| {
-                if other.is_object() || other.is_array() {
-                    String::new()
-                } else {
-                    other.to_string()
-                }
-            }),
+        other => other.as_str().map(unquote_str).unwrap_or_else(|| {
+            if other.is_object() || other.is_array() {
+                String::new()
+            } else {
+                other.to_string()
+            }
+        }),
     }
 }
 
@@ -1043,7 +1057,14 @@ fn parse_antigravity_tool(name: &str, args: &Value) -> (String, String, String, 
             input = clip(&pretty(args), OUTPUT_MAX);
         }
         _ => {
-            for k in ["CommandLine", "TargetFile", "AbsolutePath", "Url", "query", "path"] {
+            for k in [
+                "CommandLine",
+                "TargetFile",
+                "AbsolutePath",
+                "Url",
+                "query",
+                "path",
+            ] {
                 let v = arg_str(args, k);
                 if !v.is_empty() {
                     detail = v.chars().take(240).collect();
@@ -1060,6 +1081,7 @@ fn parse_antigravity_tool(name: &str, args: &Value) -> (String, String, String, 
 fn antigravity_line(t: &mut Thread, o: &Value) {
     let typ = o["type"].as_str().unwrap_or_default();
     let step_idx = o["step_index"].as_u64().unwrap_or(0);
+    let ts = parse_rfc3339(o["created_at"].as_str());
 
     match typ {
         "USER_INPUT" => {
@@ -1072,7 +1094,7 @@ fn antigravity_line(t: &mut Thread, o: &Value) {
                 .map(clean_antigravity_user_prompt)
                 .unwrap_or_default();
             if !text.is_empty() || !images.is_empty() {
-                t.msg("user", text, images);
+                t.msg_with_time("user", text, images, ts);
             }
         }
         "SYSTEM_MESSAGE" => {
@@ -1088,7 +1110,9 @@ fn antigravity_line(t: &mut Thread, o: &Value) {
                         let mut result_text = "";
                         if let Some(res_pos) = rest.find("finished with result:") {
                             let after_res = &rest[res_pos + "finished with result:".len()..];
-                            let end = after_res.find("</SYSTEM_MESSAGE>").unwrap_or(after_res.len());
+                            let end = after_res
+                                .find("</SYSTEM_MESSAGE>")
+                                .unwrap_or(after_res.len());
                             result_text = after_res[..end].trim();
                         }
 
@@ -1147,7 +1171,7 @@ fn antigravity_line(t: &mut Thread, o: &Value) {
             if let Some(c) = o["content"].as_str() {
                 let images = antigravity_images(o);
                 if !c.trim().is_empty() || !images.is_empty() {
-                    t.msg("assistant", c.to_string(), images);
+                    t.msg_with_time("assistant", c.to_string(), images, ts);
                 }
             }
         }
@@ -1160,7 +1184,12 @@ fn antigravity_line(t: &mut Thread, o: &Value) {
                 if is_error {
                     t.out[i].failed = true;
                 }
-            } else if let Some(last) = t.out.iter_mut().rev().find(|m| m.role == "tool" && m.output.is_empty()) {
+            } else if let Some(last) = t
+                .out
+                .iter_mut()
+                .rev()
+                .find(|m| m.role == "tool" && m.output.is_empty())
+            {
                 last.output = clip(output_text, OUTPUT_MAX);
                 if is_error {
                     last.failed = true;
@@ -1213,6 +1242,7 @@ fn transcript_sync(
                     activity: String::new(),
                     has_more: false,
                     model: None,
+                    context: None,
                 })
             }
         }
@@ -1226,6 +1256,7 @@ fn transcript_sync(
             activity: String::new(),
             has_more: false,
             model: None,
+            context: None,
         });
     };
     let meta = fs::metadata(&path).map_err(|e| e.to_string())?;
@@ -1237,6 +1268,7 @@ fn transcript_sync(
             .unwrap_or(0),
         meta.len(),
     );
+    let tail = tail_info(&s, &path);
     // cache: o polling de 3 s não relê arquivos de 100 MB
     if let Some((st, msgs)) = store.transcripts.lock().unwrap().get(&path) {
         if *st == stamp {
@@ -1252,7 +1284,8 @@ fn transcript_sync(
                 active: disk_activity(&s).0,
                 activity: disk_activity(&s).1,
                 has_more: msgs.len() > limit,
-                model: last_model(&s, &path),
+                model: tail.0,
+                context: tail.1,
             });
         }
     }
@@ -1278,24 +1311,85 @@ fn transcript_sync(
         revision: format!("{}:{}:{limit}", stamp.0, stamp.1),
         active,
         activity,
-        model: last_model(&s, &path),
+        model: tail.0,
+        context: tail.1,
     })
 }
 
-/// Modelo da última resposta do Claude (fica gravado em cada mensagem do assistente).
-fn last_model(s: &Session, path: &Path) -> Option<String> {
-    if s.provider != "claude" {
-        return None;
+/// Modelo e janela de contexto, lidos da cauda do arquivo da sessão.
+/// Claude: `usage` da última resposta (entrada + cache). Codex: evento `token_count` (último turno / janela do modelo).
+fn tail_info(s: &Session, path: &Path) -> (Option<String>, Option<(u64, u64)>) {
+    let read = || -> Option<Vec<u8>> {
+        let mut file = File::open(path).ok()?;
+        let size = file.metadata().ok()?.len();
+        file.seek(SeekFrom::Start(size.saturating_sub(512 * 1024))).ok()?;
+        let mut buf = Vec::new();
+        file.read_to_end(&mut buf).ok()?;
+        Some(buf)
+    };
+    let Some(buf) = read() else { return (None, None) };
+    let lines = || buf.split(|&b| b == b'\n').rev();
+    match s.provider {
+        "claude" => lines()
+            .filter(|l| contains(l, b"\"type\":\"assistant\""))
+            .find_map(|l| {
+                let o: Value = serde_json::from_slice(l).ok()?;
+                let m = &o["message"];
+                let model = m["model"].as_str().filter(|x| x.starts_with("claude"))?.to_string();
+                let u = &m["usage"];
+                let used = ["input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"]
+                    .iter()
+                    .map(|k| u[k].as_u64().unwrap_or(0))
+                    .sum::<u64>();
+                // ponytail: o arquivo não grava o limite; 1M nos modelos 5.x (e se já passou de 200k), senão 200k
+                let big = used > 200_000 || ["opus-5", "sonnet-5", "fable-5"].iter().any(|f| model.contains(f));
+                Some((Some(model), (used > 0).then_some((used, if big { 1_000_000 } else { 200_000 }))))
+            })
+            .unwrap_or((None, None)),
+        "codex" => lines()
+            .filter(|l| contains(l, b"\"token_count\""))
+            .find_map(|l| {
+                let o: Value = serde_json::from_slice(l).ok()?;
+                let info = &o["payload"]["info"];
+                let used = info["last_token_usage"]["total_tokens"].as_u64()?;
+                let limit = info["model_context_window"].as_u64()?;
+                Some((None, Some((used, limit))))
+            })
+            .unwrap_or((None, None)),
+        "antigravity" => {
+            let mut model = None;
+            let mut ctx = None;
+            for l in lines() {
+                if model.is_none() && contains(l, b"Model Selection") {
+                    if let Ok(o) = serde_json::from_slice::<Value>(l) {
+                        if let Some(content) = o["content"].as_str() {
+                            if let Some(pos) = content.find("`Model Selection` from None to ") {
+                                let sub = &content[pos + "`Model Selection` from None to ".len()..];
+                                if let Some(end) = sub.find('.') {
+                                    model = Some(sub[..end].trim().to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+                if ctx.is_none() && contains(l, b"\"PLANNER_RESPONSE\"") {
+                    if let Ok(o) = serde_json::from_slice::<Value>(l) {
+                        let input = o["input_tokens"].as_u64().unwrap_or(0);
+                        let cache = o["cache_read_tokens"].as_u64().unwrap_or(0);
+                        let used = input + cache;
+                        if used > 0 {
+                            ctx = Some((used, 1_048_576));
+                        }
+                    }
+                }
+                if model.is_some() && ctx.is_some() {
+                    break;
+                }
+            }
+            (model, ctx)
+        }
+        _ => (None, None),
     }
-    let mut file = File::open(path).ok()?;
-    let size = file.metadata().ok()?.len();
-    file.seek(SeekFrom::Start(size.saturating_sub(256 * 1024))).ok()?;
-    let mut buf = Vec::new();
-    file.read_to_end(&mut buf).ok()?;
-    buf.split(|&b| b == b'\n').rev().filter(|l| contains(l, b"\"type\":\"assistant\"")).find_map(|l| {
-        let o: Value = serde_json::from_slice(l).ok()?;
-        o["message"]["model"].as_str().filter(|m| m.starts_with("claude")).map(String::from)
-    })
 }
 
 // ---------- busca dentro das conversas ----------
@@ -1313,7 +1407,9 @@ pub struct Hit {
 fn snippet(line: &[u8], at: usize, len: usize) -> String {
     let from = at.saturating_sub(60);
     let to = (at + len + 90).min(line.len());
-    let text = String::from_utf8_lossy(&line[from..to]).replace("\\n", " ").replace("\\\"", "\"");
+    let text = String::from_utf8_lossy(&line[from..to])
+        .replace("\\n", " ")
+        .replace("\\\"", "\"");
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
@@ -1326,7 +1422,14 @@ pub async fn search_content(store: State<'_, Store>, query: String) -> Result<Ve
         return Ok(vec![]);
     }
     let gen = SEARCH_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
-    let mut sessions: Vec<Session> = store.sessions.lock().unwrap().values().filter(|s| s.file.is_some() && s.provider != "antigravity").cloned().collect();
+    let mut sessions: Vec<Session> = store
+        .sessions
+        .lock()
+        .unwrap()
+        .values()
+        .filter(|s| s.file.is_some() && s.provider != "antigravity")
+        .cloned()
+        .collect();
     sessions.sort_by_key(|s| -s.updated);
     tauri::async_runtime::spawn_blocking(move || scan(sessions, &q, gen))
         .await
@@ -1341,16 +1444,34 @@ fn scan(sessions: Vec<Session>, q: &str, gen: u64) -> Vec<Hit> {
             if SEARCH_GEN.load(std::sync::atomic::Ordering::SeqCst) != gen || hits.len() >= 30 {
                 break; // nova busca começou (ou já basta)
             }
-            let Ok(raw) = fs::read(s.file.as_ref().unwrap()) else { continue };
+            let Ok(raw) = fs::read(s.file.as_ref().unwrap()) else {
+                continue;
+            };
             let lower = raw.to_ascii_lowercase();
             // só linhas de conversa (mensagem do usuário/IA), não metadados
-            let needles: &[&[u8]] = if s.provider == "claude" { CLAUDE_NEEDLES } else { CODEX_NEEDLES };
+            let needles: &[&[u8]] = if s.provider == "claude" {
+                CLAUDE_NEEDLES
+            } else {
+                CODEX_NEEDLES
+            };
             let mut start = 0;
             while let Some(i) = finder.find(&lower[start..]).map(|i| i + start) {
-                let ls = lower[..i].iter().rposition(|&b| b == b'\n').map(|p| p + 1).unwrap_or(0);
-                let le = lower[i..].iter().position(|&b| b == b'\n').map(|p| p + i).unwrap_or(lower.len());
+                let ls = lower[..i]
+                    .iter()
+                    .rposition(|&b| b == b'\n')
+                    .map(|p| p + 1)
+                    .unwrap_or(0);
+                let le = lower[i..]
+                    .iter()
+                    .position(|&b| b == b'\n')
+                    .map(|p| p + i)
+                    .unwrap_or(lower.len());
                 if needles.iter().any(|n| contains(&raw[ls..le], n)) {
-                    hits.push(Hit { provider: s.provider, id: s.id.clone(), snippet: snippet(&raw[ls..le], i - ls, q.len()) });
+                    hits.push(Hit {
+                        provider: s.provider,
+                        id: s.id.clone(),
+                        snippet: snippet(&raw[ls..le], i - ls, q.len()),
+                    });
                     break;
                 }
                 start = le;
@@ -1425,23 +1546,39 @@ fn claude_disk_activity(path: &Path) -> (bool, String) {
     if !fresh {
         return (false, String::new());
     }
-    let Ok(mut file) = File::open(path) else { return (false, String::new()) };
+    let Ok(mut file) = File::open(path) else {
+        return (false, String::new());
+    };
     let size = file.metadata().map(|m| m.len()).unwrap_or(0);
     let _ = file.seek(SeekFrom::Start(size.saturating_sub(512 * 1024)));
     let mut buf = Vec::new();
     let _ = file.read_to_end(&mut buf);
     for line in buf.split(|&b| b == b'\n').rev() {
-        let Ok(o) = serde_json::from_slice::<Value>(line) else { continue };
+        let Ok(o) = serde_json::from_slice::<Value>(line) else {
+            continue;
+        };
         let content = &o["message"]["content"];
         match o["type"].as_str() {
             Some("assistant") => {
-                if matches!(o["message"]["stop_reason"].as_str(), Some("end_turn" | "stop_sequence" | "max_tokens" | "refusal")) {
+                if matches!(
+                    o["message"]["stop_reason"].as_str(),
+                    Some("end_turn" | "stop_sequence" | "max_tokens" | "refusal")
+                ) {
                     return (false, String::new());
                 }
-                let tool = content.as_array().into_iter().flatten().rev().find(|c| c["type"] == "tool_use");
+                let tool = content
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .rev()
+                    .find(|c| c["type"] == "tool_use");
                 let detail = match tool {
-                    Some(t) => t["input"]["description"].as_str().map(String::from)
-                        .unwrap_or_else(|| format!("Usando {}", t["name"].as_str().unwrap_or("ferramenta"))),
+                    Some(t) => t["input"]["description"]
+                        .as_str()
+                        .map(String::from)
+                        .unwrap_or_else(|| {
+                            format!("Usando {}", t["name"].as_str().unwrap_or("ferramenta"))
+                        }),
                     None => "Pensando…".into(),
                 };
                 return (true, detail);
@@ -1723,7 +1860,8 @@ mod claude_activity {
     #[test]
     fn detecta_turno_do_claude() {
         let tool = r#"{"type":"assistant","message":{"stop_reason":"tool_use","content":[{"type":"tool_use","name":"Bash","input":{"description":"x"}}]}}"#;
-        let result = r#"{"type":"user","message":{"content":[{"type":"tool_result","content":"ok"}]}}"#;
+        let result =
+            r#"{"type":"user","message":{"content":[{"type":"tool_result","content":"ok"}]}}"#;
         let end = r#"{"type":"assistant","message":{"stop_reason":"end_turn","content":[{"type":"text","text":"pronto"}]}}"#;
         let meta = r#"{"type":"attachment"}"#;
         assert!(run(&[tool]));
@@ -1734,11 +1872,23 @@ mod claude_activity {
 
 /// Abre a pasta do projeto no Explorer (só projetos que o Lume conhece).
 #[tauri::command]
-pub async fn open_folder(app: AppHandle, store: State<'_, Store>, project: String) -> Result<(), String> {
-    if !store.sessions.lock().unwrap().values().any(|s| s.project == project) {
+pub async fn open_folder(
+    app: AppHandle,
+    store: State<'_, Store>,
+    project: String,
+) -> Result<(), String> {
+    if !store
+        .sessions
+        .lock()
+        .unwrap()
+        .values()
+        .any(|s| s.project == project)
+    {
         return Err("projeto desconhecido".into());
     }
-    app.opener().open_path(&project, None::<&str>).map_err(|e| e.to_string())
+    app.opener()
+        .open_path(&project, None::<&str>)
+        .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -1752,10 +1902,90 @@ mod search_real {
         all.sort_by_key(|s| -s.updated);
         let t = std::time::Instant::now();
         let hits = super::scan(all.clone(), "deploy", 0);
-        println!("{} sessões, {} achados em {:?}", all.len(), hits.len(), t.elapsed());
+        println!(
+            "{} sessões, {} achados em {:?}",
+            all.len(),
+            hits.len(),
+            t.elapsed()
+        );
         for h in hits.iter().take(3) {
-            println!("  [{}] {}", h.provider, h.snippet.chars().take(120).collect::<String>());
+            println!(
+                "  [{}] {}",
+                h.provider,
+                h.snippet.chars().take(120).collect::<String>()
+            );
         }
         assert!(!hits.is_empty());
     }
+}
+
+#[derive(Serialize)]
+pub struct GitInfo {
+    repo: String,
+    branch: String,
+    added: u32,
+    removed: u32,
+}
+
+/// Repositório, branch e +/− do trabalho atual (commits da branch + o que ainda não foi commitado),
+/// contra o ponto onde a branch saiu da principal. None = a pasta não é um repositório git.
+#[tauri::command]
+pub async fn git_info(project: String) -> Result<Option<GitInfo>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let git = |args: &[&str]| -> Option<String> {
+            let out = hidden(Command::new("git").args(args).current_dir(&project))
+                .output()
+                .ok()?;
+            out.status
+                .success()
+                .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
+        };
+        let Some(top) = git(&["rev-parse", "--show-toplevel"]) else {
+            return Ok(None);
+        };
+        let branch = git(&["branch", "--show-current"])
+            .filter(|b| !b.is_empty())
+            .unwrap_or_else(|| "HEAD".into());
+        // base = onde a branch saiu da principal; sem remoto, só o que não foi commitado
+        let base = ["origin/HEAD", "origin/main", "origin/master"]
+            .iter()
+            .find_map(|r| git(&["merge-base", "HEAD", r]))
+            .unwrap_or_else(|| "HEAD".into());
+        let (mut added, mut removed) = (0, 0);
+        for line in git(&["diff", "--numstat", &base])
+            .unwrap_or_default()
+            .lines()
+        {
+            let mut cols = line.split('\t');
+            added += cols.next().and_then(|n| n.parse::<u32>().ok()).unwrap_or(0);
+            removed += cols.next().and_then(|n| n.parse::<u32>().ok()).unwrap_or(0);
+        }
+        let repo = top.rsplit(['/', '\\']).next().unwrap_or(&top).to_string();
+        Ok(Some(GitInfo {
+            repo,
+            branch,
+            added,
+            removed,
+        }))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Imagem escolhida no "+ Adicionar arquivos ou fotos" (vira anexo, como colar uma imagem).
+#[tauri::command]
+pub async fn read_image(path: String) -> Result<Value, String> {
+    let ext = Path::new(&path).extension().and_then(|e| e.to_str()).unwrap_or_default().to_lowercase();
+    let media = match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        _ => return Err("não é uma imagem".into()),
+    };
+    let bytes = fs::read(&path).map_err(|e| e.to_string())?;
+    if bytes.len() > 10 * 1024 * 1024 {
+        return Err("imagem maior que 10 MB".into());
+    }
+    Ok(serde_json::json!({"media_type": media, "data": base64::engine::general_purpose::STANDARD.encode(bytes)}))
 }

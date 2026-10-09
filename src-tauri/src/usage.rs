@@ -34,7 +34,7 @@ fn ms_from_iso(s: Option<&str>) -> Option<i64> {
         .map(|d| d.timestamp_millis())
 }
 
-fn http() -> reqwest::Client {
+pub fn http() -> reqwest::Client {
     reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
         .build()
@@ -87,6 +87,18 @@ async fn claude() -> Result<Report, String> {
                 used,
                 resets_at: ms_from_iso(r[key]["resets_at"].as_str()),
             });
+        }
+    }
+    // créditos em dólar (ex.: créditos de sessão na nuvem): qualquer bloco com limite em US$
+    if let Some(obj) = r.as_object() {
+        for v in obj.values() {
+            if let (Some(limit), Some(left), Some(used)) = (v["limit_dollars"].as_f64(), v["remaining_dollars"].as_f64(), v["utilization"].as_f64()) {
+                windows.push(Window {
+                    label: format!("Créditos · US$ {left:.0} de US$ {limit:.0} restantes"),
+                    used,
+                    resets_at: ms_from_iso(v["resets_at"].as_str()),
+                });
+            }
         }
     }
     let plan = oauth["subscriptionType"]
@@ -297,8 +309,9 @@ async fn antigravity() -> Result<Report, String> {
         let plan = agy_call(&client, port, &token, "GetUserStatus")
             .await
             .and_then(|s| {
-                s["userStatus"]["planStatus"]["planInfo"]["planName"]
+                s["userStatus"]["userTier"]["name"]
                     .as_str()
+                    .or_else(|| s["userStatus"]["planStatus"]["planInfo"]["planName"].as_str())
                     .map(String::from)
             });
         return Ok(Report {

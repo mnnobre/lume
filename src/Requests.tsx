@@ -14,7 +14,7 @@ export function RequestCard({request:r,session,notify}:{request:PendingRequest;s
   if(r.kind==="approval") return <div className="approval"><div className="approval-text"><b>{r.tool}</b><code>{r.detail}</code></div><div className="approval-actions"><button className="btn" disabled={busy} onClick={()=>submit(false)}>Negar</button><button className="btn primary" disabled={busy} onClick={()=>submit(true)}>Permitir</button></div></div>;
   const p=r.params;
   if(r.method.includes("requestUserInput")) return <form className="request-card" onSubmit={e=>{e.preventDefault();submit({answers:Object.fromEntries((p.questions??[]).map((q:any)=>[q.id,{answers:[values[q.id]??""]}]))});}}>
-    <b>O Codex precisa da sua resposta</b>
+    <b>{session.provider === "codex" ? "O Codex precisa da sua resposta" : session.provider === "antigravity" ? "O Antigravity precisa da sua resposta" : session.provider === "claude" ? "O Claude precisa da sua resposta" : "Resposta necessária"}</b>
     {(p.questions??[]).map((q:any)=><label key={q.id}>{q.question}<div className="request-options">{q.options?.map((o:any)=><button type="button" className={`btn ${values[q.id]===o.label?"primary":""}`} title={o.description} key={o.label} onClick={()=>setValues(v=>({...v,[q.id]:o.label}))}>{o.label}</button>)}</div><input required type={q.isSecret?"password":"text"} value={values[q.id]??""} placeholder="Sua resposta" onChange={e=>setValues(v=>({...v,[q.id]:e.target.value}))}/></label>)}
     <button className="btn primary" disabled={busy}>Enviar respostas</button>
   </form>;

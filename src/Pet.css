@@ -1,6 +1,6 @@
 html.pet-document,.pet-document body,.pet-document #root{background:transparent!important;margin:0;width:100%;height:100%;overflow:hidden}
 .pet-stage{height:100%;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding:10px 14px 12px;gap:8px;font-family:Inter,sans-serif;color:#f4f4f5;box-sizing:border-box;background:transparent;pointer-events:none}
-.pet-bubble,.pet-toolbar,.pet-composer,.pet-list,.pet-error-box{background:rgba(25,25,28,.94);border:1px solid #ffffff1c;box-shadow:0 5px 18px #0004;backdrop-filter:blur(20px)}
+.pet-bubble,.pet-composer,.pet-list,.pet-error-box{background:rgba(25,25,28,.94);border:1px solid #ffffff1c;box-shadow:0 5px 18px #0004;backdrop-filter:blur(20px)}
 .pet-bubble-wrap,.pet-bubble,.pet-toolbar,.pet-composer,.pet-list,.pet-error-box,.pet-character{pointer-events:auto}
 .pet-content{flex-shrink:0;width:100%;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none}
 .pet-stage.align-left,.align-left .pet-content{align-items:flex-start}
@@ -28,21 +28,23 @@ html.pet-document,.pet-document body,.pet-document #root{background:transparent!
 .pet-character:active{cursor:grabbing}
 .pet-sprite{width:125px;height:125px;background-image:url('/pet/lume-atlas.png');background-size:400% 400%;background-repeat:no-repeat;image-rendering:pixelated;transform:rotate(var(--look,0deg));transform-origin:50% 85%;transition:transform .18s;position:relative;z-index:1;pointer-events:none}
 .pet-sprite.large{width:160px;height:160px}
-.pet-treadmill{position:absolute;bottom:0;left:11px;width:108px;height:13px;background:#192e40;border:2px solid #426282;border-radius:9px;box-shadow:0 4px 0 #0a101b;overflow:hidden;pointer-events:none}
-.pet-treadmill div{height:5px;background:repeating-linear-gradient(90deg,#91aabe 0 2px,#34516a 2px 12px);animation:belt .45s linear infinite}
-@keyframes belt{to{transform:translateX(-12px)}}
+.pet-sprite.pet-working{transform:none}
 .pet-sprite.pet-sleeping{filter:saturate(.55);transform:rotate(8deg) scale(.92)}
 .pet-sprite.pet-error{filter:hue-rotate(330deg)}
 .pet-sprite.pet-listening{filter:drop-shadow(0 0 7px #55c5fc88)}
 .pet-sprite.pet-dragging{transform:rotate(-9deg)}
 .pet-zzz{position:absolute;right:0;top:0;color:#bfdfff;letter-spacing:3px}
 
-.pet-toolbar{display:flex;align-items:center;gap:1px;padding:3px 6px;border-radius:24px;transition:opacity .16s,transform .16s}
-.align-left .pet-toolbar{align-self:flex-start}
-.align-center .pet-toolbar{align-self:center}
-.align-right .pet-toolbar{align-self:flex-end}
-.state-idle .pet-toolbar,.state-sleeping .pet-toolbar{opacity:0;transform:translateY(4px);pointer-events:none}
-.state-idle.controls-visible .pet-toolbar,.state-sleeping.controls-visible .pet-toolbar,.pet-toolbar:focus-within{opacity:1;transform:none;pointer-events:auto}
+/* Reserve the expanded height so revealing controls never moves the character. */
+.pet-dock{position:relative;width:148px;height:38px;flex-shrink:0;pointer-events:auto}
+.align-left .pet-dock{align-self:flex-start;margin-left:-9px}
+.align-right .pet-dock{align-self:flex-end;margin-right:-9px}
+.pet-dock::before{content:"";position:absolute;left:50%;top:3px;width:24px;height:6px;box-sizing:border-box;border:1px solid transparent;border-radius:24px;background:rgba(18,18,21,.8);transform:translateX(-50%);transition:width .24s cubic-bezier(.22,1,.36,1),height .24s cubic-bezier(.22,1,.36,1),top .24s,background .24s,border-color .24s,box-shadow .24s;pointer-events:none}
+.pet-dock.is-expanded::before,.pet-dock:focus-within::before{top:0;width:148px;height:38px;background:rgba(25,25,28,.94);border-color:#ffffff1c;box-shadow:0 5px 18px #0004;backdrop-filter:blur(20px)}
+.pet-dock-trigger{position:absolute;top:0;left:50%;transform:translateX(-50%);width:44px;height:38px;padding:0;border:0;border-radius:24px;background:transparent;cursor:pointer}
+.pet-dock.is-expanded .pet-dock-trigger{pointer-events:none}
+.pet-toolbar{position:relative;display:flex;align-items:center;justify-content:center;gap:1px;padding:3px 6px;height:38px;box-sizing:border-box;border-radius:24px;opacity:0;transform:translateY(-3px) scale(.9);pointer-events:none;transition:opacity .12s,transform .2s}
+.pet-dock.is-expanded .pet-toolbar{opacity:1;transform:none;pointer-events:auto;transition-delay:.06s}
 .pet-toolbar button,.pet-list button,.pet-error-box button,.pet-composer button{border:0;background:none;color:inherit;cursor:pointer;font:inherit}
 .pet-toolbar button{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;padding:6px}
 .pet-toolbar button:hover{background:#ffffff16}
@@ -74,4 +76,4 @@ html.pet-document,.pet-document body,.pet-document #root{background:transparent!
 .pet-error-box button{padding:3px}
 .pet-error-box svg{width:13px;height:13px}
 
-@media(prefers-reduced-motion:reduce){.pet-treadmill div{animation:none}.pet-sprite,.pet-toolbar{transition:none}}
+@media(prefers-reduced-motion:reduce){.pet-sprite,.pet-toolbar,.pet-dock::before{transition:none}}

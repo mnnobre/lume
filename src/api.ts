@@ -23,6 +23,7 @@ export type Message = {
   added?: number; // linhas +/− das edições
   removed?: number;
   images?: string[];
+  timestamp?: number;
 };
 
 export type Harness = {
@@ -43,6 +44,7 @@ export type ImageIn = { media_type: string; data: string }; // data = base64 sem
 
 export type LiveEvent = { provider: Provider; id: string; seq: number } & (
   | { kind: "started" }
+  | { kind: "context"; used: number; limit: number }
   | { kind: "request"; request_id: string; method: string; params: Record<string, any> }
   | { kind: "resolved"; request_id: string }
   | { kind: "delta"; text: string; item_id?: string | null }
@@ -52,9 +54,17 @@ export type LiveEvent = { provider: Provider; id: string; seq: number } & (
 );
 
 export type PendingRequest = Extract<LiveEvent, {kind: "approval" | "request"}>;
-export type LiveView = {provider: Provider; id: string; seq: number; busy: boolean; text: string; tools: Message[]; requests: PendingRequest[]; since: number; error: string | null; item_id?: string | null};
-export type TurnOptions = { model?: string; effort?: string; skills?: {name: string; path: string}[] };
-export type Transcript = {messages: Message[] | null; updated: number; revision: string; active: boolean; activity: string; has_more: boolean; model?: string};
+export type LiveView = {provider: Provider; id: string; seq: number; busy: boolean; text: string; tools: Message[]; requests: PendingRequest[]; since: number; error: string | null; item_id?: string | null; context?: [number, number] | null};
+export type AppMention = {name: string; path: string; token: string};
+export type TurnOptions = { model?: string; effort?: string; mode?: string; skills?: {name: string; path: string}[]; mentions?: AppMention[] };
+export type ModeUpdate = { application: "live" | "next_turn"; detail: string };
+export type CodexIntegrations = {
+  apps: {id: string; name: string; description?: string; isAccessible: boolean; isEnabled: boolean}[];
+  plugins: {marketplaces?: {name: string; plugins: {id: string; name: string; installed: boolean; enabled: boolean; interface?: {displayName?: string; shortDescription?: string}}[]}[]; marketplaceLoadErrors?: {message: string}[]};
+  mcp: {name: string; pluginId?: string; authStatus: string; runtimeStatus?: string; toolsError?: string; tools: Record<string, unknown>}[];
+  errors: {apps?: string; plugins?: string; mcp?: string};
+};
+export type Transcript = {messages: Message[] | null; updated: number; revision: string; active: boolean; activity: string; has_more: boolean; model?: string; context?: [number, number]};
 export type SearchHit = {provider: Provider; id: string; snippet: string};
 export type ExternalActivity = {provider: Provider; id: string; active: boolean; detail: string; updated: number};
 export type Model = {model: string; displayName: string; defaultReasoningEffort: string; supportedReasoningEfforts: {reasoningEffort: string; description: string}[]};
@@ -80,10 +90,12 @@ export const api = {
   newChat: (provider: Provider, project: string, text: string, images: ImageIn[], options?: TurnOptions) =>
     invoke<Session>("live_new", { provider, project, text, images, options }),
   snapshot: () => invoke<LiveView[]>("live_snapshot"),
+  setMode: (s: Session, mode: string) => invoke<ModeUpdate>("live_set_mode", {provider: s.provider, id: s.id, mode}),
   activity: () => invoke<ExternalActivity[]>("session_activity"),
   respond: (id: string, requestId: string, response: unknown) => invoke<void>("live_respond", {id, requestId, response}),
   catalog: (project: string) => invoke<{models: Model[]; skills: {skills: Skill[]}[]}>("codex_catalog", {project}),
-  manage: (id: string, action: "read" | "rename" | "archive" | "unarchive", name?: string) => invoke<any>("codex_manage", {id, action, name}),
+  manage: (id: string, action: "read" | "compact" | "rename" | "archive" | "unarchive", name?: string) => invoke<any>("codex_manage", {id, action, name}),
+  integrations: (s: Session) => invoke<CodexIntegrations>("codex_integrations", {project: s.project, id: s.id || null}),
   harness: () => invoke<Harness[]>("harness_versions"),
   updateHarness: (id: string) => invoke<string>("update_harness", { id }),
   search: (query: string) => invoke<SearchHit[]>("search_content", { query }),

@@ -5,6 +5,8 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ago, api, PROVIDERS, projectName, sameSession, type Provider, type Session, type UsageReport } from "./api";
 import { activityOf, useActivity, type Activity } from "./liveStatus";
 import { Chat } from "./Chat";
+import { ProviderIcon } from "./ProviderIcon";
+import { heat, primaryWindow, Ring, untilText, useUsage } from "./usage";
 import { useFocus, type FocusApi } from "./focus";
 import { Settings, type Section } from "./Settings";
 import { useHarness, type HarnessApi } from "./harness";
@@ -71,30 +73,6 @@ function UpdateStatus({ state, retry }: ReturnType<typeof useAutoUpdate>) {
 
 // ---------- uso das IAs (5 h / semanal) ----------
 
-let usageCache: { at: number; data: UsageReport[] } | null = null;
-
-function untilText(ms: number | null) {
-  if (!ms) return "";
-  const min = Math.max(0, Math.round((ms - Date.now()) / 60000));
-  if (min < 60) return `reinicia em ${min} min`;
-  const h = Math.floor(min / 60);
-  if (h < 24) return `reinicia em ${h} h ${min % 60 ? `${min % 60} min` : ""}`.trim();
-  return `reinicia em ${Math.round(h / 24)} d`;
-}
-
-const heat = (used: number) => (used >= 90 ? "hot" : used >= 70 ? "warm" : "");
-
-/** Anel com o % usado (fechado). */
-function Ring({ used }: { used: number }) {
-  const r = 6.5, c = 2 * Math.PI * r;
-  return (
-    <svg className={`ring ${heat(used)}`} width="17" height="17" viewBox="0 0 17 17" aria-hidden>
-      <circle cx="8.5" cy="8.5" r={r} className="ring-track" />
-      <circle cx="8.5" cy="8.5" r={r} className="ring-fill" strokeDasharray={`${(Math.min(100, used) / 100) * c} ${c}`} />
-    </svg>
-  );
-}
-
 function UsageProvider({ r }: { r: UsageReport }) {
   const [open, setOpen] = useState(() => load<string[]>("lume.usageOpen", []).includes(r.provider));
   const toggle = () => {
@@ -106,7 +84,7 @@ function UsageProvider({ r }: { r: UsageReport }) {
   };
   // fechado: a janela de 5 h do grupo principal (Sessão no Claude, 5 horas no Codex, Gemini no Antigravity);
   // a semanal e os grupos secundários ficam no detalhe
-  const top = r.windows.find((w) => !/seman/i.test(w.label)) ?? r.windows[0] ?? null;
+  const top = primaryWindow(r);
   return (
     <div className={`usage-provider ${open ? "open" : ""}`}>
       <button
@@ -114,9 +92,10 @@ function UsageProvider({ r }: { r: UsageReport }) {
         onClick={toggle}
         title={top ? `${top.label}: ${Math.round(top.used)}% · ${untilText(top.resets_at)}` : r.error ?? undefined}
       >
-        <span className={`dot ${r.provider}`} />
-        <span className="usage-name">{PROVIDERS[r.provider]}</span>
-        {r.plan && <span className="plan">{r.plan[0].toUpperCase() + r.plan.slice(1)}</span>}
+        <span className="usage-title">
+          <span className="usage-name">{PROVIDERS[r.provider]}</span>
+          {r.plan && <span className="plan">{r.plan[0].toUpperCase() + r.plan.slice(1)}</span>}
+        </span>
         <span className="grow" />
         {top ? (
           <>
@@ -148,21 +127,7 @@ function UsageProvider({ r }: { r: UsageReport }) {
 }
 
 function Usage() {
-  const [data, setData] = useState<UsageReport[] | null>(usageCache?.data ?? null);
-  const [loading, setLoading] = useState(false);
-  const load = (force = false) => {
-    if (!force && usageCache && Date.now() - usageCache.at < 60_000) return; // no máximo 1x por minuto
-    setLoading(true);
-    api
-      .usage()
-      .then((d) => {
-        usageCache = { at: Date.now(), data: d };
-        setData(d);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  };
-  useEffect(() => load(), []);
+  const { data, loading, load } = useUsage();
 
   return (
     <div className="usage">
@@ -335,7 +300,7 @@ const SHOWN = 8;
 function SessionDot({ s, activity }: { s: Session; activity?: Activity }) {
   if (activity?.state === "working") return <span className="spinner small" title={activity.doing} />;
   if (activity?.state === "waiting") return <span className="dot waiting" title="Aguardando sua aprovação" />;
-  return <span className={`dot ${s.provider}`} />;
+  return <ProviderIcon p={s.provider} />;
 }
 
 function NewMenu({ project, notify, onClose, startDraft }: {
@@ -358,14 +323,14 @@ function NewMenu({ project, notify, onClose, startDraft }: {
       <div className="menu-label">Nova conversa no Lume</div>
       {(["claude", "codex", "antigravity"] as Provider[]).map((p) => (
         <button key={p} onClick={() => (onClose(), startDraft(p, project))}>
-          <span className={`dot ${p}`} /> {PROVIDERS[p]}
+          <ProviderIcon p={p} /> {PROVIDERS[p]}
         </button>
       ))}
       <div className="menu-sep" />
       <div className="menu-label">Abrir no app</div>
       {(Object.keys(PROVIDERS) as Provider[]).map((p) => (
         <button key={p} onClick={() => inApp(p)}>
-          <span className={`dot ${p}`} /> {PROVIDERS[p]}
+          <ProviderIcon p={p} /> {PROVIDERS[p]}
         </button>
       ))}
     </div>
@@ -516,7 +481,7 @@ function Recents({ sessions, select, notify, unread, hits }: {
         <div className="filters">
           {(Object.keys(PROVIDERS) as Provider[]).map((p) => (
             <button key={p} className={`chip ${p} ${providers.has(p) ? "on" : ""}`} onClick={() => toggle(p)}>
-              <span className="dot" />
+              <ProviderIcon p={p} />
               {PROVIDERS[p]}
             </button>
           ))}
@@ -580,7 +545,7 @@ function Palette({ sessions, onPick, onClose }: { sessions: Session[]; onPick: (
         <div className="palette-list">
           {list.map((s, n) => (
             <button key={`${s.provider}:${s.id}`} className={`palette-item ${n === i ? "on" : ""}`} onMouseEnter={() => setI(n)} onClick={() => onPick(s)}>
-              <span className={`dot ${s.provider}`} />
+              <ProviderIcon p={s.provider} />
               <div className="info">
                 <div className="title">{s.title}</div>
                 <div className="meta">{projectName(s.project)} · {ago(s.updated)}</div>
@@ -640,12 +605,14 @@ export default function App() {
   };
 
   const reloadRef=useRef<()=>void>(()=>{});
+  const generation=useRef(0); // sobe a cada conversa criada: lista pedida antes disso não conhece a sessão nova
   useEffect(() => {
     let disposed=false,loading=false;
     let timer:ReturnType<typeof setTimeout>;
     const reload=async()=>{
       if(loading||disposed)return;loading=true;
-      try {const list=await api.listSessions(archived);if(!disposed){setSessions(list);setCurrent(c=>c?.id?list.find(s=>sameSession(s,c))??null:c);}}
+      const gen=generation.current;
+      try {const list=await api.listSessions(archived);if(!disposed&&gen===generation.current){setSessions(list);setCurrent(c=>c?.id?list.find(s=>sameSession(s,c))??null:c);}}
       catch(e){if(!disposed)notify(String(e));}finally{loading=false;}
     };
     reloadRef.current=()=>void reload();
@@ -770,6 +737,7 @@ export default function App() {
               onChanged={()=>reloadRef.current()}
               notify={notify}
               onCreated={(s) => {
+                generation.current++;
                 setCurrent(s); // a conversa nova vira uma sessão de verdade
                 setSessions((all) => [s, ...(all ?? []).filter((x) => !sameSession(x, s))]);
               }}

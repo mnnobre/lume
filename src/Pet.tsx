@@ -12,6 +12,15 @@ type IconName="compose"|"voice"|"chats"|"close"|"open"|"stop"|"plus"|"send";
 type PetAlignment="left"|"center"|"right";
 type PetPlacement={alignment:PetAlignment};
 
+// The generated 1254px sheet has uneven padding between its four 627px cells.
+// Anchor each pose by its opaque center and foot baseline, not by the cell edge.
+// Percent positions keep these anchors fixed at both normal and large sizes.
+const workingAnchors=[{x:350.5,y:583},{x:907,y:583},{x:351,y:1178},{x:913,y:1178}];
+const workingPosition=(frame:number)=>{
+  const anchor=workingAnchors[frame];
+  return `${(anchor.x-313.5)/627*100}% ${(anchor.y-583)/627*100}%`;
+};
+
 function Icon({name}:{name:IconName}) {
   const paths:Record<IconName,ReactNode>={
     compose:<><path d="M4 20h4l11-11-4-4L4 16v4Z"/><path d="m13.5 6.5 4 4"/></>,
@@ -40,7 +49,8 @@ export function PetSprite({state,large=false}:{state:PetState;large?:boolean}) {
   },[state]);
   const row=state==="working"?1:state==="waiting"||state==="thinking"?2:state==="success"?3:0;
   const reaction=["sleeping","error","listening","dragging"].indexOf(state);
-  return <div ref={ref} className={`pet-sprite pet-${state} ${large?"large":""}`} role="img" aria-label={`Mascote Lume: ${state}`} style={{backgroundImage:`url('/pet/${reaction>=0?"lume-reactions":"lume-atlas"}.png')`,backgroundPosition:`${frame*100/3}% ${(reaction>=0?reaction:row)*100/3}%`,"--look":`${Math.max(-7,Math.min(7,look))}deg`} as CSSProperties}/>;
+  const working=state==="working";
+  return <div ref={ref} className={`pet-sprite pet-${state} ${large?"large":""}`} role="img" aria-label={`Mascote Lume: ${working?"trabalhando no computador":state}`} style={{backgroundImage:`url('/pet/${working?"lume-working":reaction>=0?"lume-reactions":"lume-atlas"}.png')`,backgroundSize:working?"200% 200%":"400% 400%",backgroundPosition:working?workingPosition(frame):`${frame*100/3}% ${(reaction>=0?reaction:row)*100/3}%`,"--look":`${Math.max(-7,Math.min(7,look))}deg`} as CSSProperties}/>;
 }
 
 const keyOf=(session:{provider:string;id:string})=>`${session.provider}:${session.id}`;
@@ -168,6 +178,7 @@ export default function Pet() {
   const waiting=!!view?.requests.length;
   const justCompleted=recentComplete&&session&&keyOf(recentComplete)===sessionKey;
   const state:PetState=dragging?"dragging":listening?"listening":sleeping?"sleeping":error||view?.error?"error":waiting?"waiting":running?(view?.text?"thinking":"working"):justCompleted?"success":"idle";
+  const controlsExpanded=controlsVisible||expanded||(state!=="idle"&&state!=="sleeping");
   const lastTool=view?.tools[view.tools.length-1];
   const detail=waiting?"Precisa da sua resposta":running?(lastTool?.title||lastTool?.detail||disk?.detail||"Executando a ação"):(justCompleted?completed?.detail||"Tarefa concluída":"Pronto para o próximo passo");
   const showBubble=!bubbleHidden&&(running||waiting||!!justCompleted||!!error||!!view?.error);
@@ -260,7 +271,7 @@ export default function Pet() {
   };
   const scheduleHideControls=()=>{
     if(controlsTimer.current)clearTimeout(controlsTimer.current);
-    controlsTimer.current=setTimeout(()=>{setControlsVisible(false);controlsTimer.current=null;},450);
+    controlsTimer.current=setTimeout(()=>{if(!document.activeElement?.closest(".pet-dock"))setControlsVisible(false);controlsTimer.current=null;},450);
   };
 
   return <div ref={stageRef} className={`pet-stage align-${alignment} state-${state} ${controlsVisible?"controls-visible":""} ${running?"is-running":""}`}><div ref={contentRef} className="pet-content">
@@ -275,12 +286,14 @@ export default function Pet() {
     </div>}
     <div className="pet-character" onPointerEnter={showControls} onPointerLeave={scheduleHideControls} onPointerDown={drag} onDoubleClick={()=>setSleeping(!sleeping)} title="Arraste somente pelo pet · Dois cliques para descansar">
       <PetSprite state={state}/>
-      {running&&!sleeping&&<div className="pet-treadmill" aria-label="Esteira em movimento"><div/></div>}
       {sleeping&&<span className="pet-zzz">z z z</span>}
     </div>
     {compose?<form ref={composerRef} className="pet-composer" onSubmit={event=>{event.preventDefault();void send();}}>
       {composeOptions&&<div className="pet-compose-options"><select aria-label="Tipo de mensagem" value={mode} onChange={event=>setMode(event.target.value as "new"|"reply")}><option value="new">Novo chat</option><option value="reply" disabled={!session||running}>Responder</option></select>{mode==="new"&&<><select aria-label="Provider" value={provider} onChange={event=>setProvider(event.target.value as Provider)}><option value="codex">Codex</option><option value="claude">Claude</option></select><select aria-label="Projeto" value={currentProject} onChange={event=>setProject(event.target.value)}>{projects.map(path=><option key={path} value={path}>{projectName(path)}</option>)}</select></>}</div>}
       <div className="pet-input"><button type="button" className={composeOptions?"selected":""} aria-label="Opções do chat" title="Opções do chat" onClick={()=>setComposeOptions(!composeOptions)}><Icon name="plus"/></button><input autoFocus value={text} onChange={event=>setText(event.target.value)} placeholder={mode==="new"?"Iniciar novo chat":"Responder…"} aria-label="Mensagem"/><button className="send" disabled={sending||!text.trim()||!currentProject||(mode==="reply"&&running)} aria-label="Enviar mensagem"><Icon name="send"/></button></div>
-    </form>:<div className="pet-toolbar" onPointerEnter={showControls} onPointerLeave={scheduleHideControls}><button aria-label="Novo chat" title="Novo chat" onClick={()=>{setMode("new");setCompose(true);setExpanded(false);}}><Icon name="compose"/></button><button aria-label="Ditar mensagem" title="Ditar mensagem · Português (Brasil)" disabled={listening} onClick={dictate}><Icon name="voice"/></button><span/><button aria-label="Mostrar conversas" title="Conversas" onClick={()=>{setExpanded(!expanded);setCompose(false);}}><Icon name="chats"/></button><button aria-label="Ocultar pet" title="Ocultar pet" onClick={()=>{localStorage.setItem("lume.pet.enabled","off");invoke("pet_toggle",{enabled:false}).catch(error=>setError(String(error)));}}><Icon name="close"/></button></div>}
+    </form>:<div className={`pet-dock ${controlsExpanded?"is-expanded":"is-collapsed"}`} onPointerEnter={showControls} onPointerLeave={scheduleHideControls} onFocusCapture={showControls} onBlurCapture={event=>{if(!event.currentTarget.contains(event.relatedTarget as Node|null))scheduleHideControls();}}>
+      <button className="pet-dock-trigger" aria-label="Mostrar controles do pet" aria-expanded={controlsExpanded} aria-controls="pet-toolbar" tabIndex={controlsExpanded?-1:0} onClick={showControls}/>
+      <div id="pet-toolbar" className="pet-toolbar" role="toolbar" aria-label="Controles do pet" inert={!controlsExpanded}><button aria-label="Novo chat" title="Novo chat" onClick={()=>{setMode("new");setCompose(true);setExpanded(false);}}><Icon name="compose"/></button><button aria-label="Ditar mensagem" title="Ditar mensagem · Português (Brasil)" disabled={listening} onClick={dictate}><Icon name="voice"/></button><span/><button aria-label="Mostrar conversas" title="Conversas" onClick={()=>{setExpanded(!expanded);setCompose(false);}}><Icon name="chats"/></button><button aria-label="Ocultar pet" title="Ocultar pet" onClick={()=>{localStorage.setItem("lume.pet.enabled","off");invoke("pet_toggle",{enabled:false}).catch(error=>setError(String(error)));}}><Icon name="close"/></button></div>
+    </div>}
   </div></div>;
 }

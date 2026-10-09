@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { EffortControl, effortName } from "./ComposerParts";
 import { api, type Model, type Session, type Skill, type TurnOptions } from "./api";
 
 export type AntigravityModelDef = {
@@ -6,17 +7,19 @@ export type AntigravityModelDef = {
   name: string;
   tier?: string;
   tag?: string;
+  efforts?: string[];
+  defaultEffort?: string;
 };
 
 export const ANTIGRAVITY_MODELS: AntigravityModelDef[] = [
-  { id: "flash", name: "Gemini 3.8 Flash", tier: "Medium" },
-  { id: "gemini-3-7-flash", name: "Gemini 3.7 Flash", tier: "Medium", tag: "Leaving Soon" },
-  { id: "gemini-3-6-flash", name: "Gemini 3.6 Flash", tier: "Medium", tag: "Leaving Soon" },
-  { id: "gemini-3-1-pro", name: "Gemini 3.1 Pro", tier: "Low", tag: "Leaving Soon" },
-  { id: "pro", name: "Gemini 3.8 Pro", tier: "Thinking" },
-  { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6 (Thinking)", tag: "Notice" },
-  { id: "claude-opus-4-6", name: "Claude Opus 4.6 (Thinking)", tag: "Notice" },
-  { id: "gpt-oss-120b", name: "GPT-OSS 120B (Medium)", tag: "Notice" },
+  { id: "flash", name: "Gemini 3.8 Flash", efforts: ["low", "medium", "high"], defaultEffort: "medium" },
+  { id: "gemini-3-7-flash", name: "Gemini 3.7 Flash", tag: "Leaving Soon", efforts: ["low", "medium", "high"], defaultEffort: "medium" },
+  { id: "gemini-3-6-flash", name: "Gemini 3.6 Flash", tag: "Leaving Soon", efforts: ["low", "medium", "high"], defaultEffort: "medium" },
+  { id: "gemini-3-1-pro", name: "Gemini 3.1 Pro", tag: "Leaving Soon", efforts: ["low"], defaultEffort: "low" },
+  { id: "pro", name: "Gemini 3.8 Pro", efforts: ["thinking"], defaultEffort: "thinking" },
+  { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6", tag: "Notice", efforts: ["thinking"], defaultEffort: "thinking" },
+  { id: "claude-opus-4-6", name: "Claude Opus 4.6", tag: "Notice", efforts: ["thinking"], defaultEffort: "thinking" },
+  { id: "gpt-oss-120b", name: "GPT-OSS 120B", tag: "Notice", efforts: ["medium"], defaultEffort: "medium" },
 ];
 
 // ponytail: lista fixa (aliases sempre apontam para a versão mais nova); a CLI 2.1.x não tem list_models
@@ -80,47 +83,56 @@ export function ModelSelector({
     return () => { active = false; };
   }, [session.provider, session.project]);
 
-  useEffect(() => {
-    if (session.provider !== "codex" || !session.id) return;
-    let active = true;
-    api.manage(session.id, "read")
-      .then((r) => {
-        if (active && r?.thread) {
-          onChange({
-            ...options,
-            model: r.thread.model ?? options.model,
-            effort: r.thread.reasoningEffort ?? options.effort,
-          });
-        }
-      })
-      .catch((e) => active && notify?.(String(e)));
-    return () => { active = false; };
-  }, [session.provider, session.id]);
+  const selectedAgyModel = ANTIGRAVITY_MODELS.find((m) => m.id === (options.model || "flash"));
 
   // Identifica o modelo ativo para o pill
   let pillName = "";
   let pillTier = "";
   if (session.provider === "antigravity") {
-    const activeId = options.model || "flash";
-    const found = ANTIGRAVITY_MODELS.find((m) => m.id === activeId);
-    if (found) {
-      pillName = found.name;
-      pillTier = found.tier || "";
+    if (selectedAgyModel) {
+      pillName = selectedAgyModel.name;
+      const currentEffort = options.effort || selectedAgyModel.defaultEffort || selectedAgyModel.tier;
+      pillTier = currentEffort ? effortName(currentEffort) : "";
     } else {
-      pillName = activeId;
+      pillName = options.model || "flash";
     }
   } else if (session.provider === "claude") {
     pillName = CLAUDE_MODELS.find((m) => m.id === options.model)?.name ?? (currentModel ? prettyClaude(currentModel) : "Modelo padrão");
-    pillTier = options.effort || "";
+    pillTier = options.effort ? effortName(options.effort) : "";
   } else if (session.provider === "codex") {
-    const found = codexModels.find((m) => m.model === options.model);
-    pillName = found ? found.displayName : (options.model || "Modelo padrão");
-    pillTier = options.effort || "";
+    const found = codexModels.find((m) => m.model === (options.model ?? currentModel));
+    pillName = found ? found.displayName : (options.model || currentModel || "Modelo padrão");
+    pillTier = options.effort ? effortName(options.effort) : "";
   }
 
-  const selectedCodexModel = codexModels.find((m) => m.model === options.model);
+  const selectedCodexModel = codexModels.find((m) => m.model === (options.model ?? currentModel));
+
+  const effortLevels =
+    session.provider === "claude"
+      ? CLAUDE_EFFORTS
+      : session.provider === "antigravity"
+      ? (selectedAgyModel?.efforts ?? [])
+      : (selectedCodexModel?.supportedReasoningEfforts ?? []).map((e) => e.reasoningEffort);
+
+  const recommendedEffort =
+    session.provider === "codex"
+      ? selectedCodexModel?.defaultReasoningEffort
+      : session.provider === "antigravity"
+      ? selectedAgyModel?.defaultEffort
+      : undefined;
+
+  const effort = (
+    <EffortControl
+      levels={effortLevels}
+      value={options.effort ?? (session.provider === "antigravity" ? selectedAgyModel?.defaultEffort : undefined)}
+      recommended={recommendedEffort}
+      onChange={(e) => onChange({ ...options, effort: e })}
+      disabled={disabled}
+    />
+  );
 
   return (
+    <>
     <div className="model-selector-wrap" ref={containerRef}>
       <button
         type="button"
@@ -132,7 +144,7 @@ export function ModelSelector({
         aria-expanded={open}
       >
         <span className="model-pill-name">{pillName}</span>
-        {pillTier && <span className="model-pill-tier">{pillTier}</span>}
+        {pillTier && session.provider === "antigravity" && <span className="model-pill-tier">{pillTier}</span>}
         <svg className={`model-pill-arrow ${open ? "up" : "down"}`} width="9" height="9" viewBox="0 0 10 10">
           {open ? (
             <path d="M2.5 6.5L5 3.5L7.5 6.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
@@ -150,19 +162,24 @@ export function ModelSelector({
             {session.provider === "antigravity" &&
               ANTIGRAVITY_MODELS.map((m) => {
                 const isSelected = (options.model || "flash") === m.id;
+                const effortLabel = m.defaultEffort ? effortName(m.defaultEffort) : m.tier;
                 return (
                   <button
                     key={m.id}
                     type="button"
                     className={`model-option-row ${isSelected ? "selected" : ""}`}
                     onClick={() => {
-                      onChange({ ...options, model: m.id });
+                      onChange({
+                        ...options,
+                        model: m.id,
+                        effort: m.defaultEffort || undefined,
+                      });
                       setOpen(false);
                     }}
                   >
                     <div className="model-row-left">
                       <span className="model-name">{m.name}</span>
-                      {m.tier && <span className="model-tier">{m.tier}</span>}
+                      {effortLabel && <span className="model-tier">{effortLabel}</span>}
                     </div>
                     <div className="model-row-right">
                       {m.tag && (
@@ -207,21 +224,6 @@ export function ModelSelector({
                     </button>
                   );
                 })}
-                <div className="model-section">
-                  <div className="model-section-title">Esforço de raciocínio</div>
-                  <div className="model-efforts">
-                    {CLAUDE_EFFORTS.map((e) => (
-                      <button
-                        key={e}
-                        type="button"
-                        className={`effort-pill ${options.effort === e ? "selected" : ""}`}
-                        onClick={() => onChange({ ...options, effort: options.effort === e ? undefined : e })}
-                      >
-                        {e}
-                      </button>
-                    ))}
-                  </div>
-                </div>
               </>
             )}
 
@@ -278,24 +280,6 @@ export function ModelSelector({
                   );
                 })}
 
-                {/* Seletor de reasoning effort */}
-                {selectedCodexModel && selectedCodexModel.supportedReasoningEfforts?.length > 0 && (
-                  <div className="model-section">
-                    <div className="model-section-title">Esforço de raciocínio</div>
-                    <div className="model-efforts">
-                      {selectedCodexModel.supportedReasoningEfforts.map((eff) => (
-                        <button
-                          key={eff.reasoningEffort}
-                          type="button"
-                          className={`effort-pill ${options.effort === eff.reasoningEffort ? "selected" : ""}`}
-                          onClick={() => onChange({ ...options, effort: eff.reasoningEffort })}
-                        >
-                          {eff.reasoningEffort}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
 
                 {/* Skills */}
                 {codexSkills.length > 0 && (
@@ -338,5 +322,7 @@ export function ModelSelector({
         </div>
       )}
     </div>
+    {effort}
+    </>
   );
 }
