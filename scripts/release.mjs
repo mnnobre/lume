@@ -13,7 +13,7 @@ const git = (...args) => execFileSync("git", args, { stdio: "inherit" });
 const pkg = JSON.parse(readFileSync("package.json", "utf8"));
 pkg.version = version;
 writeFileSync("package.json", JSON.stringify(pkg, null, 2) + "\n");
-execFileSync("npm", ["install", "--package-lock-only", "--silent"], { stdio: "inherit", shell: true });
+execFileSync("npm install --package-lock-only --silent", { stdio: "inherit", shell: true }); // npm é .cmd no Windows
 
 git("add", "-A"); // a release leva tudo que mudou desde a última
 git("commit", "-m", `v${version}${msg.length ? `: ${msg.join(" ")}` : ""}`);
