@@ -1,0 +1,60 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tag precisa bater com a versão do package.json
+        shell: pwsh
+        run: |
+          $v = (Get-Content package.json | ConvertFrom-Json).version
+          if ("v$v" -ne "${{ github.ref_name }}") { throw "tag ${{ github.ref_name }} != package.json v$v" }
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: npm ci
+
+      - name: Build + assinatura do instalador
+        run: npx tauri build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+
+      - name: Publicar release + latest.json
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $exe = Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          $sig = Get-Content "$($exe.FullName).sig" -Raw
+          $notes = git log -1 --pretty=%B
+          gh release create $tag $exe.FullName --title "Lume $tag" --notes "$notes"
+
+          # Repo privado: o app baixa pela API de assets (link de download normal exige login no navegador)
+          $assetUrl = gh api "repos/${{ github.repository }}/releases/tags/$tag" --jq ".assets[] | select(.name == \`"$($exe.Name)\`") | .url"
+          @{
+            version  = $tag.TrimStart("v")
+            notes    = $notes.Trim()
+            pub_date = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+            platforms = @{ "windows-x86_64" = @{ signature = $sig.Trim(); url = $assetUrl } }
+          } | ConvertTo-Json -Depth 5 | Set-Content latest.json -Encoding utf8NoBOM
+          gh release upload $tag latest.json
