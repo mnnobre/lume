@@ -3,6 +3,7 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { api, ago, PROVIDERS, projectName, type ImageIn, type LiveEvent, type Message, type Session } from "./api";
+import { activityOf, markIdle, markWorking, markWorkingAgain, useActivity } from "./liveStatus";
 
 type Approval = { request_id: string; tool: string; detail: string };
 type LiveTurn = { text: string; tools: Message[]; approvals: Approval[] };
@@ -86,6 +87,7 @@ function ToolItem({ m }: { m: Message }) {
       <button className="tool-line" onClick={() => expandable && setOpen(!open)} disabled={!expandable}>
         <span className="tool-label">{toolLabel(m)}</span>
         {m.failed && <span className="tool-fail">falhou</span>}
+        {(m.added || m.removed) ? <span className="diffstat"><span className="plus">+{m.added ?? 0}</span> <span className="minus">−{m.removed ?? 0}</span></span> : null}
         {expandable && <Chevron open={open} />}
       </button>
       {open && (
@@ -108,18 +110,52 @@ function ToolItem({ m }: { m: Message }) {
   );
 }
 
+const KINDS: { match: string[]; one: string; many: (n: number) => string }[] = [
+  { match: ["Bash", "PowerShell", "Comando"], one: "executou um comando", many: (n) => `executou ${n} comandos` },
+  { match: ["Read"], one: "leu um arquivo", many: (n) => `leu ${n} arquivos` },
+  { match: ["Write"], one: "criou um arquivo", many: (n) => `criou ${n} arquivos` },
+  { match: ["Edit", "MultiEdit", "Editar arquivos", "NotebookEdit"], one: "editou um arquivo", many: (n) => `editou ${n} arquivos` },
+  { match: ["Grep", "Glob", "ToolSearch"], one: "fez uma busca", many: (n) => `fez ${n} buscas` },
+  { match: ["WebSearch", "Busca na web"], one: "pesquisou na web", many: (n) => `pesquisou na web ${n} vezes` },
+  { match: ["WebFetch"], one: "abriu uma página", many: (n) => `abriu ${n} páginas` },
+  { match: ["Task", "Agent"], one: "delegou uma tarefa", many: (n) => `delegou ${n} tarefas` },
+];
+const baseName = (p?: string) => p?.split(/[\\/]/).pop();
+
+function summarize(tools: Message[]) {
+  const parts: { text: string; n: number; first: Message }[] = [];
+  for (const m of tools) {
+    const kind = KINDS.find((k) => k.match.includes(m.text));
+    const label = kind ? kind.one : `usou ${m.text}`;
+    const part = parts.find((p) => p.text === label);
+    part ? part.n++ : parts.push({ text: label, n: 1, first: m });
+  }
+  const phrases = parts.map(({ text, n, first }) => {
+    const kind = KINDS.find((k) => k.one === text);
+    if (n > 1) return kind ? kind.many(n) : `${text} ${n} vezes`;
+    // uma ação só: mostra o arquivo, como o Claude ("criou probe_agy.py")
+    const file = ["Write", "Edit", "MultiEdit", "Read"].includes(first.text) && baseName(first.detail);
+    return file ? text.replace(/um arquivo$/, file) : text;
+  });
+  const shown = phrases.slice(0, 3);
+  const rest = phrases.length - shown.length;
+  const out = rest > 0 ? `${shown.join(", ")} e mais ${rest} ${rest === 1 ? "ação" : "ações"}` : shown.length > 1 ? `${shown.slice(0, -1).join(", ")} e ${shown[shown.length - 1]}` : shown[0] ?? "";
+  return out.charAt(0).toUpperCase() + out.slice(1);
+}
+
 function ToolGroup({ tools, running }: { tools: Message[]; running?: boolean }) {
   const [open, setOpen] = useState(false);
   const n = tools.length;
-  const verb = running ? "Executando" : "Executado";
-  const label = tools.every(isCommand)
-    ? `${verb} ${n} ${n === 1 ? "comando" : "comandos"}`
-    : `${running ? "Usando" : "Usou"} ${n} ${n === 1 ? "ferramenta" : "ferramentas"}`;
+  const added = tools.reduce((a, m) => a + (m.added ?? 0), 0);
+  const removed = tools.reduce((a, m) => a + (m.removed ?? 0), 0);
   return (
     <div className="tool-group">
       <button className="tool-group-head" onClick={() => setOpen(!open)}>
         {running && <span className="spinner" />}
-        <span>{label}</span>
+        <span className="tool-summary">{summarize(tools)}</span>
+        {(added > 0 || removed > 0) && (
+          <span className="diffstat"><span className="plus">+{added}</span> <span className="minus">−{removed}</span></span>
+        )}
         <Chevron open={open} />
       </button>
       {open && <div className="tool-list">{tools.map((m, i) => <ToolItem key={i} m={m} />)}</div>}
@@ -158,6 +194,40 @@ function Bubble({ m, zoom }: { m: Message; zoom: (src: string) => void }) {
   );
 }
 
+function elapsed(ms: number) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${s % 60} s`;
+}
+
+/** Ícone animado do "trabalhando" (os pontinhos que giram, como no Claude). */
+const Working = ({ waiting }: { waiting?: boolean }) => (
+  <span className={`working-icon ${waiting ? "waiting" : ""}`}><span /><span /><span /><span /></span>
+);
+
+/** Linha ao vivo no fim da conversa: o que a IA está fazendo agora + segundos do passo. */
+function LiveRow({ doing, since, waiting }: { doing: string; since: number; waiting?: boolean }) {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => tick((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <div className={`live-row ${waiting ? "waiting" : ""}`}>
+      <Working waiting={waiting} />
+      <span className="live-doing">{doing}</span>
+      <span className="live-time">{elapsed(Date.now() - since)}</span>
+    </div>
+  );
+}
+
+/** Última coisa que aconteceu na conversa (para quando ela roda no app). */
+function lastAction(messages: Message[]) {
+  const m = messages[messages.length - 1];
+  if (!m) return "trabalhando";
+  if (m.role === "tool") return toolLabel(m);
+  return m.role === "user" ? "pensando" : "escrevendo";
+}
+
 const readFile = (f: File) =>
   new Promise<{ preview: string; image: ImageIn }>((ok, fail) => {
     const r = new FileReader();
@@ -184,7 +254,18 @@ export function Chat({ session, notify }: { session: Session; notify: (m: string
   const atEnd = useRef(true);
   const fileInput = useRef<HTMLInputElement>(null);
 
-  const reload = () => api.transcript(session).then((r) => setMessages(r.messages)).catch((e) => notify(String(e)));
+  const activity = activityOf(useActivity(), session);
+  // conversa rodando fora do Lume (no app do provider): o arquivo da sessão continua mudando
+  const [external, setExternal] = useState<number | null>(null); // desde quando
+  const reload = () =>
+    api
+      .transcript(session)
+      .then((r) => {
+        setMessages(r.messages);
+        const fresh = !!r.updated && Date.now() - r.updated < 20_000;
+        setExternal((cur) => (fresh && !liveRef.current ? cur ?? r.updated : null));
+      })
+      .catch((e) => notify(String(e)));
 
   // conversa do arquivo (fonte da verdade); sem turno ao vivo, acompanha mudanças feitas pelo app a cada 4 s
   useEffect(() => {
@@ -192,7 +273,8 @@ export function Chat({ session, notify }: { session: Session; notify: (m: string
     setLive(null);
     atEnd.current = true;
     reload();
-    const t = setInterval(() => !liveRef.current && reload(), 4000);
+    // sem turno do Lume, acompanha o arquivo (pega também a conversa rodando no app)
+    const t = setInterval(() => !liveRef.current && reload(), 2500);
     return () => clearInterval(t);
   }, [session.provider, session.id]);
 
@@ -238,10 +320,12 @@ export function Chat({ session, notify }: { session: Session; notify: (m: string
     atEnd.current = true;
     setMessages((m) => [...(m ?? []), { role: "user", text: t, images: imgs.map((a) => a.preview) }]);
     setLive({ text: "", tools: [], approvals: [] });
+    markWorking(session.provider, session.id);
     try {
       await api.send(session, t, imgs.map((a) => a.image));
     } catch (e) {
       notify(String(e));
+      markIdle(session.provider, session.id);
       setLive(null);
       setText(t);
       setAttachments(imgs);
@@ -251,6 +335,7 @@ export function Chat({ session, notify }: { session: Session; notify: (m: string
 
   async function answer(a: Approval, allow: boolean) {
     setLive((l) => l && { ...l, approvals: l.approvals.filter((x) => x.request_id !== a.request_id) });
+    markWorkingAgain(session.provider, session.id);
     await api.answer(session, a.request_id, allow).catch((e) => notify(String(e)));
   }
 
@@ -269,7 +354,7 @@ export function Chat({ session, notify }: { session: Session; notify: (m: string
 
   return (
     <section className="chat">
-      <header className="chat-head" data-tauri-drag-region>
+      <header className="chat-head" data-drag>
         <span className={`dot ${session.provider}`} />
         <div className="chat-title">
           <h2 title={session.title}>{session.title}</h2>
@@ -311,14 +396,20 @@ export function Chat({ session, notify }: { session: Session; notify: (m: string
                   </div>
                 </div>
               ))}
-              <div className="turn assistant">
-                {live.text ? (
+              {live.text && (
+                <div className="turn assistant">
                   <div className="md"><Md text={live.text} zoom={setZoomed} /></div>
-                ) : (
-                  !live.approvals.length && <div className="typing"><span /><span /><span /></div>
-                )}
-              </div>
+                </div>
+              )}
+              <LiveRow
+                doing={activity?.doing ?? "Pensando…"}
+                since={activity?.stepSince ?? Date.now()}
+                waiting={activity?.state === "waiting"}
+              />
             </>
+          )}
+          {!live && external && messages && (
+            <LiveRow doing={`Em andamento no ${PROVIDERS[session.provider]} · ${lastAction(messages)}`} since={external} />
           )}
         </div>
       </div>

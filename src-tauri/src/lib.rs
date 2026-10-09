@@ -1,9 +1,12 @@
 mod live;
 mod sessions;
 mod update;
+mod usage;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // provedor de criptografia do rustls para as chamadas HTTPS (uso do Claude); o mesmo do atualizador
+    let _ = rustls::crypto::ring::default_provider().install_default();
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -20,6 +23,7 @@ pub fn run() {
             live::live_send,
             live::live_answer,
             live::live_interrupt,
+            usage::usage,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

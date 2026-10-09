@@ -319,6 +319,11 @@ fn codex_server(app: &AppHandle, live: &Live) -> Result<Arc<CodexServer>, String
     Ok(s)
 }
 
+/// Uma chamada avulsa ao app-server (ex.: account/rateLimits/read), subindo o servidor se preciso.
+pub fn codex_request(app: &AppHandle, live: &Live, method: &str, params: Value) -> Result<Value, String> {
+    codex_server(app, live)?.request(method, params)
+}
+
 fn codex_send(app: &AppHandle, live: &Live, store: &Store, id: &str, text: &str, images: &[ImageIn]) -> Result<(), String> {
     let s = find(store, "codex", id)?;
     let server = codex_server(app, live)?;

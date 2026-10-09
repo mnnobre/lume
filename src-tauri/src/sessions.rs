@@ -46,6 +46,10 @@ pub struct Message {
     output: String,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     failed: bool,
+    #[serde(skip_serializing_if = "is_zero")]
+    added: u32, // linhas adicionadas (edições)
+    #[serde(skip_serializing_if = "is_zero")]
+    removed: u32,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     images: Vec<String>, // data URLs
 }
@@ -53,6 +57,7 @@ pub struct Message {
 #[derive(Serialize)]
 pub struct Transcript {
     messages: Option<Vec<Message>>, // None = provider não deixa ler (Antigravity)
+    updated: i64,                   // ms da última escrita no arquivo (mostra "em andamento no app")
 }
 
 #[derive(Default)]
@@ -299,6 +304,41 @@ const CODEX_NEEDLES: &[&[u8]] = &[
     b"\"UserMessage\"", b"\"AgentMessage\"", b"\"CommandExecution\"", b"\"FileChange\"", b"\"Extension\"",
     b"\"user_message\"", b"\"agent_message\"",
 ];
+fn is_zero(n: &u32) -> bool {
+    *n == 0
+}
+
+fn lines(s: Option<&str>) -> u32 {
+    s.map(|s| s.lines().count() as u32).unwrap_or(0)
+}
+
+/// +/− de uma edição do Claude (Edit/MultiEdit/Write) a partir da entrada da ferramenta.
+fn claude_diff(name: &str, input: &Value) -> (u32, u32) {
+    match name {
+        "Write" => (lines(input["content"].as_str()), 0),
+        "Edit" => (lines(input["new_string"].as_str()), lines(input["old_string"].as_str())),
+        "MultiEdit" => input["edits"].as_array().into_iter().flatten().fold((0, 0), |(a, r), e| {
+            (a + lines(e["new_string"].as_str()), r + lines(e["old_string"].as_str()))
+        }),
+        _ => (0, 0),
+    }
+}
+
+/// +/− de um diff unificado (Codex), ignorando os cabeçalhos.
+fn diff_counts(diff: &str) -> (u32, u32) {
+    diff.lines().fold((0, 0), |(a, r), l| {
+        if l.starts_with("+++") || l.starts_with("---") {
+            (a, r)
+        } else if l.starts_with('+') {
+            (a + 1, r)
+        } else if l.starts_with('-') {
+            (a, r + 1)
+        } else {
+            (a, r)
+        }
+    })
+}
+
 const OUTPUT_MAX: usize = 8000; // ponytail: saída de ferramenta cortada; o arquivo da sessão tem a íntegra
 
 fn clip(s: &str, max: usize) -> String {
@@ -380,8 +420,12 @@ fn claude_line(t: &mut Thread, o: &Value) {
                 Some("text") => t.msg("assistant", c["text"].as_str().unwrap_or_default().into(), vec![]),
                 Some("tool_use") => {
                     let input = &c["input"];
+                    let name = c["name"].as_str().unwrap_or("tool");
+                    let (added, removed) = claude_diff(name, input);
                     let m = Message {
-                        text: c["name"].as_str().unwrap_or("tool").into(),
+                        text: name.into(),
+                        added,
+                        removed,
                         title: input["description"].as_str().unwrap_or_default().into(),
                         detail: crate::live::tool_detail(input),
                         input: clip(&input["command"].as_str().map(String::from).unwrap_or_else(|| pretty(input)), OUTPUT_MAX),
@@ -429,8 +473,11 @@ fn codex_line(t: &mut Thread, o: &Value) {
             let diffs = changes
                 .map(|c| c.iter().map(|(f, d)| format!("{f}\n{}", d["unified_diff"].as_str().unwrap_or_default())).collect::<Vec<_>>().join("\n\n"))
                 .unwrap_or_default();
+            let (added, removed) = diff_counts(&diffs);
             t.tool(None, Message {
                 text: "Editar arquivos".into(),
+                added,
+                removed,
                 detail: files.iter().map(|f| f.rsplit(['\\', '/']).next().unwrap_or(f)).collect::<Vec<_>>().join(", "),
                 output: clip(&diffs, OUTPUT_MAX),
                 failed: it["status"] == "failed",
@@ -485,19 +532,19 @@ fn codex_images(content: &Value) -> Vec<String> {
 pub async fn transcript(store: State<'_, Store>, provider: String, id: String) -> Result<Transcript, String> {
     let s = find(&store, &provider, &id)?;
     let Some(path) = s.file.clone() else {
-        return Ok(Transcript { messages: None });
+        return Ok(Transcript { messages: None, updated: 0 });
     };
     let meta = fs::metadata(&path).map_err(|e| e.to_string())?;
     let stamp = (meta.modified().ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_millis() as u64).unwrap_or(0), meta.len());
     // cache: o polling de 3 s não relê arquivos de 100 MB
     if let Some((st, msgs)) = store.transcripts.lock().unwrap().get(&path) {
         if *st == stamp {
-            return Ok(Transcript { messages: Some(msgs.clone()) });
+            return Ok(Transcript { messages: Some(msgs.clone()), updated: stamp.0 as i64 });
         }
     }
     let msgs = read_messages(&s, &path).map_err(|e| e.to_string())?;
     store.transcripts.lock().unwrap().insert(path, (stamp, msgs.clone()));
-    Ok(Transcript { messages: Some(msgs) })
+    Ok(Transcript { messages: Some(msgs), updated: stamp.0 as i64 })
 }
 
 // ---------- trava de sessão em uso ----------

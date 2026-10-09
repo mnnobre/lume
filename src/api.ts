@@ -20,8 +20,13 @@ export type Message = {
   input?: string;
   output?: string;
   failed?: boolean;
+  added?: number; // linhas +/− das edições
+  removed?: number;
   images?: string[];
 };
+
+export type UsageWindow = { label: string; used: number; resets_at: number | null };
+export type UsageReport = { provider: Provider; plan: string | null; windows: UsageWindow[]; error: string | null };
 
 export type ImageIn = { media_type: string; data: string }; // data = base64 sem prefixo
 
@@ -40,7 +45,7 @@ export const PROVIDERS: Record<Provider, string> = {
 
 export const api = {
   listSessions: () => invoke<Session[]>("list_sessions"),
-  transcript: (s: Session) => invoke<{ messages: Message[] | null }>("transcript", { provider: s.provider, id: s.id }),
+  transcript: (s: Session) => invoke<{ messages: Message[] | null; updated: number }>("transcript", { provider: s.provider, id: s.id }),
   send: (s: Session, text: string, images: ImageIn[]) =>
     invoke<void>("live_send", { provider: s.provider, id: s.id, text, images }),
   answer: (s: Session, requestId: string, allow: boolean) =>
@@ -48,6 +53,7 @@ export const api = {
   interrupt: (s: Session) => invoke<void>("live_interrupt", { provider: s.provider, id: s.id }),
   open: (s: Session) => invoke<void>("open_session", { provider: s.provider, id: s.id }),
   newSession: (provider: Provider, project: string) => invoke<void>("new_session", { provider, project }),
+  usage: () => invoke<UsageReport[]>("usage"),
   onLive: (cb: (e: LiveEvent) => void) => listen<LiveEvent>("live", (e) => cb(e.payload)),
 };
 
