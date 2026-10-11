@@ -6,6 +6,7 @@ mod sessions;
 mod single_instance;
 mod update;
 mod usage;
+mod worklog;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -51,6 +52,7 @@ pub fn run() {
             harness::harness_versions,
             harness::update_harness,
             usage::usage,
+            worklog::work_log,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

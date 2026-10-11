@@ -72,7 +72,7 @@ pub struct Transcript {
 
 #[derive(Default)]
 pub struct Store {
-    sessions: Mutex<HashMap<(String, String), Session>>,
+    pub(crate) sessions: Mutex<HashMap<(String, String), Session>>,
     transcripts: Mutex<HashMap<PathBuf, ((u64, u64), Vec<Message>)>>, // arquivo -> ((mtime, tamanho), msgs)
 }
 
@@ -508,7 +508,7 @@ pub fn claude_desktop_register(s: &Session) {
 }
 
 /// Arquivo de uma sessão que ainda não estava na lista (criada agora pelo Lume).
-fn locate(s: &Session) -> Option<PathBuf> {
+pub(crate) fn locate(s: &Session) -> Option<PathBuf> {
     match s.provider {
         "claude" => fs::read_dir(home().join(".claude").join("projects"))
             .ok()?

@@ -70,6 +70,8 @@ export type ExternalActivity = {provider: Provider; id: string; active: boolean;
 export type Model = {model: string; displayName: string; defaultReasoningEffort: string; supportedReasoningEfforts: {reasoningEffort: string; description: string}[]};
 export type Skill = {name: string; path: string; description: string; enabled: boolean};
 
+export type WorkSession = {provider: Provider; id: string; project: string; title: string; spans: [number, number][]; prompts: [number, string][]; files: string[]};
+
 export const PROVIDERS: Record<Provider, string> = {
   claude: "Claude Code",
   codex: "Codex",
@@ -100,6 +102,7 @@ export const api = {
   updateHarness: (id: string) => invoke<string>("update_harness", { id }),
   search: (query: string) => invoke<SearchHit[]>("search_content", { query }),
   usage: () => invoke<UsageReport[]>("usage"),
+  workLog: (since: number) => invoke<WorkSession[]>("work_log", { since }),
   onLive: (cb: (e: LiveEvent) => void) => listen<LiveEvent>("live", (e) => cb(e.payload)),
 };
 

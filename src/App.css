@@ -947,3 +947,20 @@ button.composer-usage:hover, button.composer-usage.on { background: rgba(255, 25
 .rail .footer-btn .update-dot { position: absolute; top: 2px; right: 2px; box-shadow: 0 0 0 2px var(--bg, #1e1e24); }
 .rail .footer-menu { left: calc(100% + 8px); right: auto; bottom: 0; width: 280px; transform-origin: bottom left; }
 .footer-head { justify-content: flex-start; gap: 9px; padding-left: 8px; }
+.dash-grid.wide { grid-template-columns: minmax(280px, 1fr) minmax(320px, 1.3fr); }
+@media (max-width: 900px) { .dash-grid.wide { grid-template-columns: 1fr; } }
+.dash-project.active { background: var(--active); }
+.dash-pname { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.dash-pname .name { flex: none; }
+.dash-pbar { width: 70px; height: 4px; border-radius: 999px; background: var(--active); flex: none; overflow: hidden; }
+.dash-pbar span { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
+.dash-time { width: 82px; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; flex: none; }
+.dash-bars { display: flex; align-items: flex-end; gap: 2px; height: 120px; }
+.dash-bar-col { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; gap: 4px; }
+.dash-bar-track { flex: 1; display: flex; align-items: flex-end; border-radius: 4px 4px 0 0; }
+.dash-bar-col:hover .dash-bar-track { background: var(--hover); }
+.dash-bar-track span { display: block; width: 100%; min-height: 0; border-radius: 4px 4px 0 0; background: var(--accent); }
+.dash-bar-label { height: 14px; font-size: 10.5px; color: var(--muted); text-align: center; white-space: nowrap; overflow: visible; }
+.dash-detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.dash-prompts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; max-height: 360px; overflow: auto; }
+.dash-prompts li { display: flex; flex-direction: column; gap: 1px; font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }

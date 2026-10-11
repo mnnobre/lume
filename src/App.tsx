@@ -786,7 +786,7 @@ export default function App() {
           unread={unread} searching={searching} />
         <main className="content">
           {view === "dashboard" ? (
-            <Dashboard sessions={sorted} open={(s) => (changeView("home"), setCurrent(s))} />
+            <Dashboard sessions={sorted} notify={notify} open={(s) => (changeView("home"), setCurrent(s))} />
           ) : current ? (
             <Chat
               key={`${current.provider}:${current.id || "nova:" + current.project}`}
