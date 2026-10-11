@@ -5,6 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ago, api, PROVIDERS, projectName, sameSession, type Provider, type Session, type UsageReport } from "./api";
 import { activityOf, useActivity, type Activity } from "./liveStatus";
 import { Chat } from "./Chat";
+import { Dashboard } from "./Dashboard";
 import { ProviderIcon } from "./ProviderIcon";
 import { heat, primaryWindow, Ring, untilText, useUsage } from "./usage";
 import { useFocus, type FocusApi } from "./focus";
@@ -186,6 +187,11 @@ function FooterMenu({ focus, update, openSettings, harness }: {
     <div className="footer" onClick={(e) => e.stopPropagation()}>
       {open && (
         <div className="footer-menu">
+          <div className="menu-row footer-head">
+            <span className="avatar">L</span>
+            <span className="grow">Lume <span className="ver">v{version}</span></span>
+          </div>
+          <div className="menu-sep" />
           <div className="menu-row">
             <span className="menu-title">Modo Foco</span>
             <button className={`toggle ${f.enabled ? "on" : ""}`} role="switch" aria-checked={f.enabled} aria-label="Modo Foco"
@@ -220,12 +226,10 @@ function FooterMenu({ focus, update, openSettings, harness }: {
           </button>
         </div>
       )}
-      <button className={`footer-btn ${open ? "open" : ""}`} onClick={() => setOpen(!open)}>
+      <button className={`footer-btn ${open ? "open" : ""}`} onClick={() => setOpen(!open)}
+        title={`Lume v${version}${active ? ` · Foco: ${active.name}` : ""}`} aria-label="Menu do Lume">
         <span className="avatar">L</span>
-        <span className="grow">Lume <span className="ver">v{version}</span></span>
-        {active && <span className="focus-chip">{active.name}</span>}
         {harness.outdated > 0 && <span className="dot update-dot" title="Há atualização de harness" />}
-        <svg className={`chev up ${open ? "open" : ""}`} width="10" height="10" viewBox="0 0 10 10"><path d="M2 6.5l3-3 3 3" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
       </button>
     </div>
   );
@@ -338,7 +342,7 @@ function NewMenu({ project, notify, onClose, startDraft }: {
   );
 }
 
-const PROJECTS = " projetos"; // chave do menu do "+" de Projetos (não colide com um caminho)
+const PROJECTS = "menu:projetos"; // chave do menu do "+" de Projetos (caminho nunca tem esse formato)
 
 function ProjectMenu({ onClose, pick }: { onClose: () => void; pick: () => void }) {
   useEffect(() => {
@@ -362,11 +366,9 @@ function Sidebar(props: {
   current: Session | null;
   select: (s: Session | null) => void;
   notify: (m: string) => void;
-  update: ReturnType<typeof useAutoUpdate>;
   focus: FocusApi;
   openSettings: (section?: Section) => void;
   startDraft: (provider: Provider, project: string) => void;
-  harness: HarnessApi;
   unread: (s: Session) => boolean;
   searching: boolean;
 }) {
@@ -476,8 +478,30 @@ function Sidebar(props: {
           );
         })}
       </nav>
-      <FooterMenu focus={focus} update={props.update} openSettings={props.openSettings} harness={props.harness} />
     </aside>
+  );
+}
+
+// ---------- barra de ícones (sempre visível) ----------
+
+type View = "home" | "dashboard";
+
+function Rail({ view, setView, footer }: { view: View; setView: (v: View) => void; footer: React.ReactNode }) {
+  const item = (v: View, label: string, icon: React.ReactNode) => (
+    <button className={`rail-btn ${view === v ? "active" : ""}`} onClick={() => setView(v)} title={label} aria-label={label} aria-current={view === v}>
+      {icon}
+    </button>
+  );
+  return (
+    <nav className="rail" aria-label="Navegação">
+      <div className="rail-drag" data-drag />
+      {item("home", "Início",
+        <svg width="17" height="17" viewBox="0 0 16 16"><path d="M2.5 7 8 2.5 13.5 7v6a.5.5 0 0 1-.5.5h-3v-4h-4v4H3a.5.5 0 0 1-.5-.5Z" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" /></svg>)}
+      {item("dashboard", "Dashboard",
+        <svg width="17" height="17" viewBox="0 0 16 16"><rect x="2" y="2" width="5" height="6" rx="1.2" fill="none" stroke="currentColor" strokeWidth="1.4" /><rect x="9" y="2" width="5" height="3.5" rx="1.2" fill="none" stroke="currentColor" strokeWidth="1.4" /><rect x="9" y="7.5" width="5" height="6.5" rx="1.2" fill="none" stroke="currentColor" strokeWidth="1.4" /><rect x="2" y="10" width="5" height="4" rx="1.2" fill="none" stroke="currentColor" strokeWidth="1.4" /></svg>)}
+      <div className="grow-y" />
+      {footer}
+    </nav>
   );
 }
 
@@ -744,19 +768,26 @@ export default function App() {
     return sessions && sorted.filter((s) => matches(s, q));
   }, [sorted, query, hits]);
 
+  const [view, setView] = useState<View>(() => (load<View>("lume.view", "home") === "dashboard" ? "dashboard" : "home"));
+  const changeView = (v: View) => (setView(v), save("lume.view", v));
+
   return (
     <div className="window">
       <TitleBar />
-      <button className="sidebar-toggle icon-btn" onClick={toggleSidebar} title={`${collapsed ? "Mostrar" : "Ocultar"} barra lateral (Ctrl+B)`} aria-label="Alternar barra lateral">
+      {view === "home" && <button className="sidebar-toggle icon-btn" onClick={toggleSidebar} title={`${collapsed ? "Mostrar" : "Ocultar"} barra lateral (Ctrl+B)`} aria-label="Alternar barra lateral">
         <svg width="16" height="16" viewBox="0 0 16 16"><rect x="2" y="2.5" width="12" height="11" rx="2" fill="none" stroke="currentColor" strokeWidth="1.3" /><path d="M6 2.5v11" stroke="currentColor" strokeWidth="1.3" /></svg>
-      </button>
-      <div className={`shell ${collapsed ? "collapsed" : ""}`}>
-        <Sidebar projects={projects} query={query} setQuery={setQuery} current={current} select={setCurrent} notify={notify} update={update}
-          focus={focus} openSettings={(sec) => setSettings(sec ?? "focus")} harness={harness}
+      </button>}
+      <div className={`shell ${collapsed ? "collapsed" : ""} ${view === "dashboard" ? "dash" : ""}`}>
+        <Rail view={view} setView={changeView}
+          footer={<FooterMenu focus={focus} update={update} openSettings={(sec) => setSettings(sec ?? "focus")} harness={harness} />} />
+        <Sidebar projects={projects} query={query} setQuery={setQuery} current={current} select={setCurrent} notify={notify}
+          focus={focus} openSettings={(sec) => setSettings(sec ?? "focus")}
           startDraft={(provider, project) => setCurrent({ provider, project, id: "", title: "Nova conversa", updated: Date.now() })}
           unread={unread} searching={searching} />
         <main className="content">
-          {current ? (
+          {view === "dashboard" ? (
+            <Dashboard sessions={sorted} open={(s) => (changeView("home"), setCurrent(s))} />
+          ) : current ? (
             <Chat
               key={`${current.provider}:${current.id || "nova:" + current.project}`}
               session={current}

@@ -73,7 +73,7 @@ button { font: inherit; color: inherit; }
 .controls button:hover { background: var(--hover); color: var(--text); }
 .controls .close:hover { background: #e81123; color: #fff; }
 
-.shell { flex: 1; display: grid; grid-template-columns: 264px 1fr; min-height: 0; }
+.shell { flex: 1; display: grid; grid-template-columns: 52px 264px 1fr; min-height: 0; }
 
 /* ---------- barra lateral (Mica aparece aqui) ---------- */
 .sidebar { display: flex; flex-direction: column; padding: 0 8px 10px; min-height: 0; }
@@ -787,12 +787,12 @@ kbd { font: 11px var(--mono); color: var(--faint); }
 .chat-head .head-icons .icon-btn { width: 30px; height: 30px; }
 
 /* ocultar/mostrar a barra lateral (Ctrl+B) */
-.sidebar-toggle { position: absolute; top: 14px; left: 222px; z-index: 11; transition: left 0.2s ease; }
+.sidebar-toggle { position: absolute; top: 14px; left: 274px; z-index: 11; transition: left 0.2s ease; }
 .shell { transition: grid-template-columns 0.2s ease; }
-.shell.collapsed { grid-template-columns: 0 1fr; }
-.shell.collapsed .sidebar { visibility: hidden; overflow: hidden; padding: 0; }
+.shell.collapsed, .shell.dash { grid-template-columns: 52px 0 1fr; }
+.shell.collapsed .sidebar, .shell.dash .sidebar { visibility: hidden; overflow: hidden; padding: 0; }
 .shell.collapsed .content { border-left: 0; }
-.window:has(.shell.collapsed) .sidebar-toggle { left: 12px; }
+.window:has(.shell.collapsed) .sidebar-toggle { left: 64px; }
 .shell.collapsed .chat-head, .shell.collapsed .content-head { padding-left: 52px; }
 
 /* rolagem do chat só aparece ao passar o mouse */
@@ -915,3 +915,35 @@ button.composer-usage:hover, button.composer-usage.on { background: rgba(255, 25
 }
 .queue-tag { flex: none; font-size: 11px; opacity: 0.55; }
 .queue-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- barra de ícones + dashboard ---------- */
+.rail { display: flex; flex-direction: column; align-items: center; gap: 6px; padding-bottom: 10px; border-right: 1px solid var(--line); min-height: 0; }
+.rail-drag { height: 46px; align-self: stretch; flex: none; }
+.rail-btn { width: 36px; height: 36px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); display: grid; place-items: center; cursor: default; padding: 0; }
+.rail-btn svg { display: block; }
+.rail-btn:hover { background: var(--hover); color: var(--text); }
+.rail-btn.active { background: var(--active); color: var(--text); }
+.dash-body { display: flex; flex-direction: column; gap: 16px; padding-top: 4px; }
+.dash-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.dash-tile, .dash-card { background: var(--raised); border: 1px solid var(--line); border-radius: 12px; }
+.dash-tile { padding: 14px 16px; display: flex; flex-direction: column; gap: 2px; }
+.dash-num { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.dash-label { color: var(--muted); font-size: 12.5px; }
+.dash-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; align-items: start; }
+.dash-card { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+.dash-card h3 { font-size: 13px; font-weight: 600; margin: 0 0 2px; }
+.dash-card h3.dash-gap { margin-top: 10px; }
+.dash-usage { display: flex; flex-direction: column; gap: 6px; padding-bottom: 6px; }
+.dash-row-head { display: flex; align-items: center; gap: 7px; font-weight: 500; }
+.dash-row-head .plan { margin-left: 4px; }
+.dash-project { display: flex; align-items: center; gap: 8px; border: 0; background: transparent; padding: 6px 8px; margin: 0 -8px; border-radius: 7px; text-align: left; cursor: default; min-width: 0; }
+.dash-project:hover { background: var(--hover); }
+.dash-project .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.dash-meta { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.grow-y { flex: 1; }
+.rail .footer { margin: 0; padding: 0; }
+.rail .footer-btn { width: 36px; height: 36px; padding: 0; justify-content: center; position: relative; border-radius: 50%; }
+.rail .footer-btn .avatar { width: 28px; height: 28px; font-size: 13px; }
+.rail .footer-btn .update-dot { position: absolute; top: 2px; right: 2px; box-shadow: 0 0 0 2px var(--bg, #1e1e24); }
+.rail .footer-menu { left: calc(100% + 8px); right: auto; bottom: 0; width: 280px; transform-origin: bottom left; }
+.footer-head { justify-content: flex-start; gap: 9px; padding-left: 8px; }
