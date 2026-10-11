@@ -14,6 +14,7 @@ import { useNotificationsSetting, useTurnNotifications } from "./notify";
 import "./App.css";
 import {listen} from "@tauri-apps/api/event";
 import {startRuntime} from "./runtime";
+import { open as pickFolder } from "@tauri-apps/plugin-dialog";
 
 // ---------- atualização automática ----------
 
@@ -337,6 +338,23 @@ function NewMenu({ project, notify, onClose, startDraft }: {
   );
 }
 
+const PROJECTS = " projetos"; // chave do menu do "+" de Projetos (não colide com um caminho)
+
+function ProjectMenu({ onClose, pick }: { onClose: () => void; pick: () => void }) {
+  useEffect(() => {
+    window.addEventListener("click", onClose);
+    return () => window.removeEventListener("click", onClose);
+  }, []);
+  return (
+    <div className="menu" onClick={(e) => e.stopPropagation()}>
+      <button onClick={() => (onClose(), pick())}>
+        <svg width="14" height="14" viewBox="0 0 16 16"><path d="M1.5 4.5v8a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1H8L6.5 3h-4a1 1 0 0 0-1 1.5Z" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" /><path d="M8 7.5v4M6 9.5h4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" /></svg>
+        Novo projeto
+      </button>
+    </div>
+  );
+}
+
 function Sidebar(props: {
   projects: Project[];
   query: string;
@@ -357,6 +375,12 @@ function Sidebar(props: {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(load<string[]>("lume.expanded", [])));
   const [showAll, setShowAll] = useState<Set<string>>(new Set());
   const [menu, setMenu] = useState<string | null>(null);
+  const [newProject, setNewProject] = useState<string | null>(null); // pasta escolhida em "Novo projeto"
+
+  const pickProject = async () => {
+    const dir = await pickFolder({ directory: true, title: "Pasta do novo projeto" });
+    if (typeof dir === "string") setNewProject(dir);
+  };
 
   const toggle = (path: string) =>
     setExpanded((cur) => {
@@ -391,6 +415,11 @@ function Sidebar(props: {
             Foco: {focus.active.name} <span>×</span>
           </button>
         )}
+        <button className="add-project" aria-label="Adicionar projeto" onClick={(e) => (e.stopPropagation(), setMenu(menu === PROJECTS ? null : PROJECTS))}>
+          <svg width="11" height="11" viewBox="0 0 12 12"><path d="M6 2v8M2 6h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+        </button>
+        {menu === PROJECTS && <ProjectMenu onClose={() => setMenu(null)} pick={pickProject} />}
+        {newProject && <NewMenu project={newProject} notify={props.notify} onClose={() => setNewProject(null)} startDraft={props.startDraft} />}
       </div>
       <nav className="tree">
         {focus.active && !projects.length && (

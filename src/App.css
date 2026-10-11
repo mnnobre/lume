@@ -537,6 +537,15 @@ kbd { font: 11px var(--mono); color: var(--faint); }
 .toggle.on span { transform: translateX(14px); }
 
 .section { display: flex; align-items: center; gap: 8px; }
+.section { position: relative; }
+.section .menu { font-size: 13px; font-weight: 400; color: var(--text); left: calc(100% - 6px); right: auto; top: 8px; min-width: 180px; } /* abre à direita do +, fora da barra */
+.add-project {
+  width: 18px; height: 18px; border: 0; border-radius: 5px; background: transparent; color: var(--muted);
+  display: grid; place-items: center; cursor: default; opacity: 0.6; margin-left: auto; padding: 0;
+}
+.add-project svg { display: block; }
+.focus-pill + .add-project { margin-left: 0; }
+.add-project:hover { background: var(--active); color: var(--text); opacity: 1; }
 .focus-pill {
   margin-left: auto; border: 0; font-size: 11px; font-weight: 600; color: var(--accent); background: color-mix(in srgb, var(--accent) 13%, transparent);
   padding: 1px 4px 1px 8px; border-radius: 999px; cursor: default; display: flex; align-items: center; gap: 3px;

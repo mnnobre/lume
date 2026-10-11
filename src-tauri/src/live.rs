@@ -550,6 +550,7 @@ fn claude_new(
     live.claude.lock().unwrap().insert(id.clone(), p);
     emit(app, "claude", &id, Event::Started {}); // a conversa nova já abre com o "trabalhando"
     let s = Session::created("claude", id, project.to_string(), text);
+    crate::sessions::claude_desktop_register(&s);
     remember(store, s.clone());
     Ok(s)
 }

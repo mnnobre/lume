@@ -466,6 +466,47 @@ pub fn remember(store: &Store, s: Session) {
         .insert((s.provider.to_string(), s.id.clone()), s);
 }
 
+/// Registra a conversa da CLI no app desktop do Claude (aba Code): ele só lista sessões com um
+/// `local_<id>.json` em claude-code-sessions/<conta>/<org>/ (mesmo registro que o claude://resume cria).
+/// A pasta e o modelo vêm do registro mais recente (conta em uso). O app lê os registros ao abrir.
+pub fn claude_desktop_register(s: &Session) {
+    let root = PathBuf::from(std::env::var("APPDATA").unwrap_or_default())
+        .join("Claude")
+        .join("claude-code-sessions");
+    let subdirs = |p: PathBuf| fs::read_dir(p).into_iter().flatten().flatten().map(|e| e.path());
+    let Some(newest) = subdirs(root)
+        .flat_map(subdirs)
+        .flat_map(subdirs)
+        .filter(|p| p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("local_")))
+        .max_by_key(|p| mtime_ms(p))
+    else {
+        return; // app desktop nunca usado
+    };
+    let model = fs::read(&newest)
+        .ok()
+        .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
+        .and_then(|v| v["model"].as_str().map(String::from))
+        .unwrap_or_default();
+    let record = serde_json::json!({
+        "sessionId": format!("local_{}", s.id),
+        "cliSessionId": s.id,
+        "cwd": s.project,
+        "originCwd": s.project,
+        "createdAt": s.updated,
+        "lastActivityAt": s.updated,
+        "model": model,
+        "isArchived": false,
+        "title": s.title,
+        "permissionMode": "default",
+        "alwaysAllowedReasons": [],
+        "sessionPermissionUpdates": [],
+    });
+    let _ = fs::write(
+        newest.with_file_name(format!("local_{}.json", s.id)),
+        record.to_string(),
+    );
+}
+
 /// Arquivo de uma sessão que ainda não estava na lista (criada agora pelo Lume).
 fn locate(s: &Session) -> Option<PathBuf> {
     match s.provider {
@@ -1766,20 +1807,10 @@ pub async fn open_session(
 #[tauri::command]
 pub async fn new_session(
     app: AppHandle,
-    store: State<'_, Store>,
     provider: String,
     project: String,
 ) -> Result<(), String> {
-    // só em projeto que já tem sessão registrada
-    if !store
-        .sessions
-        .lock()
-        .unwrap()
-        .values()
-        .any(|s| s.project == project)
-    {
-        return Err("projeto desconhecido".into());
-    }
+    // vale para projeto novo (botão "Novo projeto"); launch confere se a pasta existe
     launch(&app, &provider, &project, None)
 }
 
