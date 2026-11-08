@@ -9,6 +9,7 @@ export type Session = {
   project: string;
   title: string;
   updated: number; // ms
+  account?: string; // conta extra do Claude Code; ausente = principal
 };
 
 /** role "tool": text = nome, title = o que o agente disse que ia fazer, detail = resumo, input/output = ao expandir. */
@@ -38,7 +39,9 @@ export type Harness = {
 };
 
 export type UsageWindow = { label: string; used: number; resets_at: number | null };
-export type UsageReport = { provider: Provider; plan: string | null; windows: UsageWindow[]; error: string | null };
+export type UsageReport = { provider: Provider; account?: string; plan: string | null; windows: UsageWindow[]; error: string | null };
+export type Account = { name: string | null; email: string | null; plan: string | null; logged_in: boolean; dir: string };
+export type ClaudeAccount = Account;
 
 export type ImageIn = { media_type: string; data: string }; // data = base64 sem prefixo
 
@@ -70,6 +73,25 @@ export type ExternalActivity = {provider: Provider; id: string; active: boolean;
 export type Model = {model: string; displayName: string; defaultReasoningEffort: string; supportedReasoningEfforts: {reasoningEffort: string; description: string}[]};
 export type Skill = {name: string; path: string; description: string; enabled: boolean};
 
+export type SkillOrigin = "builtin" | "plugin" | "user";
+
+export type SkillLocation = {
+  provider: "claude" | "antigravity" | "codex" | "shared" | string;
+  scope: "global" | "project";
+  origin: SkillOrigin | string;
+  project_path: string | null;
+  project_name: string | null;
+  skill_path: string;
+};
+
+export type AggregatedSkill = {
+  id: string;
+  name: string;
+  description: string;
+  locations: SkillLocation[];
+  origins: string[];
+};
+
 export type WorkSession = {provider: Provider; id: string; project: string; title: string; spans: [number, number][]; prompts: [number, string][]; files: string[]};
 
 export const PROVIDERS: Record<Provider, string> = {
@@ -89,8 +111,17 @@ export const api = {
   open: (s: Session) => invoke<void>("open_session", { provider: s.provider, id: s.id }),
   openFolder: (project: string) => invoke<void>("open_folder", { project }),
   newSession: (provider: Provider, project: string) => invoke<void>("new_session", { provider, project }),
-  newChat: (provider: Provider, project: string, text: string, images: ImageIn[], options?: TurnOptions) =>
-    invoke<Session>("live_new", { provider, project, text, images, options }),
+  newChat: (provider: Provider, project: string, text: string, images: ImageIn[], options?: TurnOptions, account?: string | null) =>
+    invoke<Session>("live_new", { provider, project, text, images, options, account: account ?? null }),
+  claudeAccounts: () => invoke<Account[]>("claude_accounts_list"),
+  addClaudeAccount: (name: string) => invoke<void>("claude_account_add", { name }),
+  removeClaudeAccount: (name: string) => invoke<void>("claude_account_remove", { name }),
+  loginClaudeAccount: (account: string | null) => invoke<void>("claude_account_login", { account }),
+  moveClaudeAccount: (id: string, account: string | null) => invoke<Session>("claude_move_account", { id, account }),
+  antigravityAccounts: () => invoke<Account[]>("antigravity_accounts_list"),
+  addAntigravityAccount: (name: string) => invoke<void>("antigravity_account_add", { name }),
+  removeAntigravityAccount: (name: string) => invoke<void>("antigravity_account_remove", { name }),
+  loginAntigravityAccount: (account: string | null) => invoke<void>("antigravity_account_login", { account }),
   snapshot: () => invoke<LiveView[]>("live_snapshot"),
   setMode: (s: Session, mode: string) => invoke<ModeUpdate>("live_set_mode", {provider: s.provider, id: s.id, mode}),
   activity: () => invoke<ExternalActivity[]>("session_activity"),
@@ -103,6 +134,9 @@ export const api = {
   search: (query: string) => invoke<SearchHit[]>("search_content", { query }),
   usage: () => invoke<UsageReport[]>("usage"),
   workLog: (since: number) => invoke<WorkSession[]>("work_log", { since }),
+  listAllSkills: (projects: string[] = []) => invoke<AggregatedSkill[]>("list_all_skills", { projects }),
+  openSkillPath: (path: string) => invoke<void>("open_skill_path", { path }),
+  readSkillContent: (path: string) => invoke<string>("read_skill_content", { path }),
   onLive: (cb: (e: LiveEvent) => void) => listen<LiveEvent>("live", (e) => cb(e.payload)),
 };
 

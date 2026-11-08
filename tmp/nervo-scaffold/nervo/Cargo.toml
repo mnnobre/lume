@@ -1,0 +1,26 @@
+[package]
+name = "nervo"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "A local Windows observation and operation layer for AI assistants"
+
+[dependencies]
+futures-util = "0.3"
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "sync", "time"] }
+tokio-util = "0.7"
+rmcp = { version = "=3.5.1", default-features = false, features = ["server", "transport-streamable-http-server"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4"] }
+sha2 = "0.10"
+windows-registry = "0.6"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Threading", "Win32_System_ProcessStatus", "Win32_System_SystemInformation", "Win32_System_Diagnostics_ToolHelp", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Accessibility"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+

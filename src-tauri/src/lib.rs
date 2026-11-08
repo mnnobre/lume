@@ -1,9 +1,11 @@
+mod accounts;
 mod codex;
 mod harness;
 mod live;
 mod pet;
 mod sessions;
 mod single_instance;
+mod skills;
 mod update;
 mod usage;
 mod worklog;
@@ -53,6 +55,18 @@ pub fn run() {
             harness::update_harness,
             usage::usage,
             worklog::work_log,
+            accounts::claude_accounts_list,
+            accounts::claude_account_add,
+            accounts::claude_account_remove,
+            accounts::claude_account_login,
+            accounts::antigravity_accounts_list,
+            accounts::antigravity_account_add,
+            accounts::antigravity_account_remove,
+            accounts::antigravity_account_login,
+            live::claude_move_account,
+            skills::list_all_skills,
+            skills::open_skill_path,
+            skills::read_skill_content,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -1,6 +1,6 @@
 //! Uso do plano de cada IA, pelo mesmo caminho que os apps e os projetos de referência usam
 //! (CodexBar, ClaudeBar, usage-kun):
-//! - Claude: GET api.anthropic.com/api/oauth/usage com o login do Claude Code (~/.claude/.credentials.json)
+//! - Claude: GET api.anthropic.com/api/oauth/usage com o login de cada conta do Claude Code (<pasta da conta>/.credentials.json)
 //! - Codex: `account/rateLimits/read` no codex app-server (protocolo oficial)
 //! - Antigravity: `RetrieveUserQuotaSummary` no language server local do app (porta + CSRF da linha de comando)
 use std::process::Command;
@@ -23,6 +23,8 @@ pub struct Window {
 #[derive(Serialize, Clone)]
 pub struct Report {
     provider: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    account: Option<String>, // conta extra do Claude Code
     plan: Option<String>,
     windows: Vec<Window>,
     error: Option<String>,
@@ -43,8 +45,8 @@ pub fn http() -> reqwest::Client {
 
 // ---------- Claude ----------
 
-async fn claude() -> Result<Report, String> {
-    let path = dirs_home().join(".claude").join(".credentials.json");
+async fn claude(account: Option<String>) -> Result<Report, String> {
+    let path = crate::accounts::claude_dir(account.as_deref()).join(".credentials.json");
     let creds: Value = serde_json::from_str(
         &std::fs::read_to_string(&path).map_err(|_| "faça `claude auth login` para ver o uso")?,
     )
@@ -106,15 +108,13 @@ async fn claude() -> Result<Report, String> {
         .map(|p| p[..1].to_uppercase() + &p[1..]);
     Ok(Report {
         provider: "claude",
+        account,
         plan,
         windows,
         error: None,
     })
 }
 
-fn dirs_home() -> std::path::PathBuf {
-    std::path::PathBuf::from(std::env::var("USERPROFILE").unwrap_or_default())
-}
 
 // ---------- Codex ----------
 
@@ -168,6 +168,7 @@ fn codex(app: &AppHandle, live: &Live) -> Result<Report, String> {
         .find_map(|(_, b)| b["planType"].as_str())
         .map(String::from);
     Ok(Report {
+        account: None,
         provider: "codex",
         plan,
         windows,
@@ -177,18 +178,37 @@ fn codex(app: &AppHandle, live: &Live) -> Result<Report, String> {
 
 // ---------- Antigravity ----------
 
-/// Acha o language server do app (não o da IDE), o token CSRF e as portas em que ele escuta.
+/// Acha o language server da conta informada (None = principal), o token CSRF e as portas em que ele escuta.
 /// No Windows ele sobe com --https_server_port 0, então as portas vêm do sistema, não da linha de comando.
-pub fn antigravity_server() -> Result<(String, Vec<u16>), String> {
-    let ps = r#"$p = Get-CimInstance Win32_Process -Filter "Name='language_server.exe'" | Where-Object { $_.CommandLine -match '--app_data_dir[= ]antigravity(\s|$)' } | Select-Object -First 1
-if ($p) { [pscustomobject]@{ cmd = $p.CommandLine; ports = @((Get-NetTCPConnection -State Listen -OwningProcess $p.ProcessId -ErrorAction SilentlyContinue).LocalPort) } | ConvertTo-Json -Compress }"#;
+pub fn antigravity_server(account: Option<&str>) -> Result<(String, Vec<u16>), String> {
+    let ps = r#"$s = @(Get-CimInstance Win32_Process -Filter "Name='language_server.exe'" | Where-Object { $_.CommandLine -like "*--app_data_dir*antigravity*" } | ForEach-Object {
+  $ppid = $_.ParentProcessId
+  $p = Get-CimInstance Win32_Process -Filter "ProcessId=$ppid"
+  [pscustomobject]@{
+    pid = $_.ProcessId
+    cmd = $_.CommandLine
+    parent_cmd = if ($p) { $p.CommandLine } else { "" }
+    ports = @((Get-NetTCPConnection -State Listen -OwningProcess $_.ProcessId -ErrorAction SilentlyContinue).LocalPort)
+  }
+})
+if ($s.Count -gt 0) { $s | ConvertTo-Json -Compress }"#;
     let out = hidden(Command::new("powershell").args(["-NoProfile", "-Command", ps]))
         .output()
         .map_err(|e| e.to_string())?;
-    let v: Value =
-        serde_json::from_slice(&out.stdout).map_err(|_| "abra o Antigravity para ver o uso")?;
-    let cmd = v["cmd"].as_str().unwrap_or_default();
-    let token = cmd
+    let entries: Vec<crate::accounts::AntigravityProcessEntry> = match serde_json::from_slice::<Value>(&out.stdout) {
+        Ok(Value::Array(arr)) => arr.into_iter().filter_map(|v| serde_json::from_value(v).ok()).collect(),
+        Ok(v @ Value::Object(_)) => serde_json::from_value(v).ok().into_iter().collect(),
+        _ => vec![],
+    };
+
+    let matched = crate::accounts::match_antigravity_server(&entries, account)
+        .ok_or_else(|| match account {
+            Some(a) => format!("abra o Antigravity da conta {a}"),
+            None => "abra o Antigravity para ver o uso".into(),
+        })?;
+
+    let token = matched
+        .cmd
         .split_whitespace()
         .collect::<Vec<_>>()
         .windows(2)
@@ -198,18 +218,12 @@ if ($p) { [pscustomobject]@{ cmd = $p.CommandLine; ports = @((Get-NetTCPConnecti
             _ => None,
         })
         .ok_or("não achei o token do Antigravity")?;
-    let ports = match &v["ports"] {
-        Value::Array(a) => a
-            .iter()
-            .filter_map(|p| p.as_u64().map(|n| n as u16))
-            .collect(),
-        p => p.as_u64().map(|n| vec![n as u16]).unwrap_or_default(),
-    };
-    Ok((token, ports))
+
+    Ok((token, matched.ports))
 }
 
-pub fn antigravity_cancel(id: &str) -> Result<(), String> {
-    let (token, ports) = antigravity_server()?;
+pub fn antigravity_cancel(id: &str, account: Option<&str>) -> Result<(), String> {
+    let (token, ports) = antigravity_server(account)?;
     let client = http();
     for port in ports {
         let url =
@@ -229,8 +243,8 @@ pub fn antigravity_cancel(id: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub fn antigravity_focus(id: &str) -> Result<(), String> {
-    let (token, ports) = antigravity_server()?;
+pub fn antigravity_focus(id: &str, account: Option<&str>) -> Result<(), String> {
+    let (token, ports) = antigravity_server(account)?;
     let client = http();
     for port in ports {
         let url =
@@ -267,8 +281,9 @@ async fn agy_call(client: &reqwest::Client, port: u16, token: &str, method: &str
     r.json().await.ok()
 }
 
-async fn antigravity() -> Result<Report, String> {
-    let (token, ports) = tokio_blocking(antigravity_server).await?;
+async fn antigravity(account: Option<String>) -> Result<Report, String> {
+    let acc = account.clone();
+    let (token, ports) = tokio_blocking(move || antigravity_server(acc.as_deref())).await?;
     let client = http();
     for port in ports {
         let Some(summary) = agy_call(&client, port, &token, "RetrieveUserQuotaSummary").await
@@ -306,15 +321,20 @@ async fn antigravity() -> Result<Report, String> {
                 });
             }
         }
-        let plan = agy_call(&client, port, &token, "GetUserStatus")
-            .await
-            .and_then(|s| {
-                s["userStatus"]["userTier"]["name"]
-                    .as_str()
-                    .or_else(|| s["userStatus"]["planStatus"]["planInfo"]["planName"].as_str())
-                    .map(String::from)
-            });
+        let user_status = agy_call(&client, port, &token, "GetUserStatus").await;
+        let plan = user_status.as_ref().and_then(|s| {
+            s["userStatus"]["userTier"]["name"]
+                .as_str()
+                .or_else(|| s["userStatus"]["planStatus"]["planInfo"]["planName"].as_str())
+                .map(String::from)
+        });
+        let email = user_status.as_ref().and_then(|s| {
+            s["userStatus"]["email"].as_str()
+        });
+        crate::accounts::save_antigravity_profile(account.as_deref(), email, plan.as_deref());
+
         return Ok(Report {
+            account,
             provider: "antigravity",
             plan,
             windows,
@@ -334,6 +354,7 @@ async fn tokio_blocking<T: Send + 'static>(
 
 fn failed(provider: &'static str, error: String) -> Report {
     Report {
+        account: None,
         provider,
         plan: None,
         windows: vec![],
@@ -345,18 +366,30 @@ fn failed(provider: &'static str, error: String) -> Report {
 pub async fn usage(app: AppHandle) -> Result<Vec<Report>, String> {
     use tauri::Manager;
     // os três em paralelo; o Codex conversa com o app-server (bloqueante), então vai para uma thread própria
-    let c = tauri::async_runtime::spawn(claude());
-    let a = tauri::async_runtime::spawn(antigravity());
+    let claude_accounts = crate::accounts::claude_accounts();
+    let claude: Vec<_> = claude_accounts
+        .iter()
+        .map(|a| tauri::async_runtime::spawn(claude(a.clone())))
+        .collect();
+    let agy_accounts = crate::accounts::antigravity_accounts();
+    let agy: Vec<_> = agy_accounts
+        .iter()
+        .map(|a| tauri::async_runtime::spawn(antigravity(a.clone())))
+        .collect();
     let x = tokio_blocking(move || codex(&app, &app.state::<Live>()));
     let x = x.await;
     let join = |r: Result<Result<Report, String>, tauri::Error>| {
         r.map_err(|e| e.to_string()).and_then(|r| r)
     };
-    Ok(vec![
-        join(c.await).unwrap_or_else(|e| failed("claude", e)),
-        x.unwrap_or_else(|e| failed("codex", e)),
-        join(a.await).unwrap_or_else(|e| failed("antigravity", e)),
-    ])
+    let mut out = vec![];
+    for (account, c) in claude_accounts.into_iter().zip(claude) {
+        out.push(join(c.await).unwrap_or_else(|e| Report { account, ..failed("claude", e) }));
+    }
+    out.push(x.unwrap_or_else(|e| failed("codex", e)));
+    for (account, a) in agy_accounts.into_iter().zip(agy) {
+        out.push(join(a.await).unwrap_or_else(|e| Report { account, ..failed("antigravity", e) }));
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -367,7 +400,7 @@ mod real {
     fn uso_real() {
         let _ = rustls::crypto::ring::default_provider().install_default();
         for r in tauri::async_runtime::block_on(async {
-            [super::claude().await, super::antigravity().await]
+            [super::claude(None).await, super::antigravity(None).await]
         }) {
             match r {
                 Ok(r) => {

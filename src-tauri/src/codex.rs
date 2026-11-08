@@ -38,6 +38,7 @@ pub fn list(app: &AppHandle, archived: bool) -> Result<Vec<Session>, String> {
                 .or(t["preview"].as_str())
                 .unwrap_or("Sem título");
             let s = Session {
+                account: None,
                 provider: "codex",
                 id: id.into(),
                 project: project_root(t["cwd"].as_str().unwrap_or_default()),

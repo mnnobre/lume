@@ -5,7 +5,10 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ago, api, PROVIDERS, projectName, sameSession, type Provider, type Session, type UsageReport } from "./api";
 import { activityOf, useActivity, type Activity } from "./liveStatus";
 import { Chat } from "./Chat";
+import { accountName, useClaudeAccounts, useAntigravityAccounts } from "./accounts";
 import { Dashboard } from "./Dashboard";
+import { RouterView } from "./Router";
+import { SkillsView } from "./Skills";
 import { ProviderIcon } from "./ProviderIcon";
 import { heat, primaryWindow, Ring, untilText, useUsage } from "./usage";
 import { useFocus, type FocusApi } from "./focus";
@@ -95,7 +98,7 @@ function UsageProvider({ r }: { r: UsageReport }) {
         title={top ? `${top.label}: ${Math.round(top.used)}% · ${untilText(top.resets_at)}` : r.error ?? undefined}
       >
         <span className="usage-title">
-          <span className="usage-name">{PROVIDERS[r.provider]}</span>
+          <span className="usage-name">{PROVIDERS[r.provider]}{r.account && ` · ${r.account}`}</span>
           {r.plan && <span className="plan">{r.plan[0].toUpperCase() + r.plan.slice(1)}</span>}
         </span>
         <span className="grow" />
@@ -140,7 +143,7 @@ function Usage() {
         </button>
       </div>
       {!data && <p className="hint small">Carregando…</p>}
-      {data?.map((r) => <UsageProvider key={r.provider} r={r} />)}
+      {data?.map((r) => <UsageProvider key={`${r.provider}:${r.account ?? ""}`} r={r} />)}
     </div>
   );
 }
@@ -312,8 +315,10 @@ function NewMenu({ project, notify, onClose, startDraft }: {
   project: string;
   notify: (m: string) => void;
   onClose: () => void;
-  startDraft: (provider: Provider, project: string) => void;
+  startDraft: (provider: Provider, project: string, account?: string) => void;
 }) {
+  const claudeAccounts = useClaudeAccounts();
+  const agyAccounts = useAntigravityAccounts();
   useEffect(() => {
     const close = () => onClose();
     window.addEventListener("click", close);
@@ -326,11 +331,23 @@ function NewMenu({ project, notify, onClose, startDraft }: {
   return (
     <div className="menu" onClick={(e) => e.stopPropagation()}>
       <div className="menu-label">Nova conversa no Lume</div>
-      {(["claude", "codex", "antigravity"] as Provider[]).map((p) => (
-        <button key={p} onClick={() => (onClose(), startDraft(p, project))}>
-          <ProviderIcon p={p} /> {PROVIDERS[p]}
-        </button>
-      ))}
+      {claudeAccounts.length > 1
+        ? claudeAccounts.map((a) => (
+            <button key={a.name ?? ""} onClick={() => (onClose(), startDraft("claude", project, a.name ?? undefined))} title={a.email ?? undefined}>
+              <ProviderIcon p="claude" /> {PROVIDERS.claude} <span className="menu-account">{accountName(a.name)}</span>
+            </button>
+          ))
+        : <button onClick={() => (onClose(), startDraft("claude", project))}><ProviderIcon p="claude" /> {PROVIDERS.claude}</button>}
+      <button onClick={() => (onClose(), startDraft("codex", project))}>
+        <ProviderIcon p="codex" /> {PROVIDERS.codex}
+      </button>
+      {agyAccounts.length > 1
+        ? agyAccounts.map((a) => (
+            <button key={a.name ?? ""} onClick={() => (onClose(), startDraft("antigravity", project, a.name ?? undefined))} title={a.email ?? undefined}>
+              <ProviderIcon p="antigravity" /> {PROVIDERS.antigravity} <span className="menu-account">{accountName(a.name)}</span>
+            </button>
+          ))
+        : <button onClick={() => (onClose(), startDraft("antigravity", project))}><ProviderIcon p="antigravity" /> {PROVIDERS.antigravity}</button>}
       <div className="menu-sep" />
       <div className="menu-label">Abrir no app</div>
       {(Object.keys(PROVIDERS) as Provider[]).map((p) => (
@@ -368,7 +385,7 @@ function Sidebar(props: {
   notify: (m: string) => void;
   focus: FocusApi;
   openSettings: (section?: Section) => void;
-  startDraft: (provider: Provider, project: string) => void;
+  startDraft: (provider: Provider, project: string, account?: string) => void;
   unread: (s: Session) => boolean;
   searching: boolean;
 }) {
@@ -455,6 +472,7 @@ function Sidebar(props: {
                     <button key={`${s.provider}:${s.id}`} className={`leaf ${sameSession(s, current) ? "active" : ""} ${props.unread(s) ? "unread" : ""}`} onClick={() => select(s)} title={s.title}>
                       <SessionDot s={s} activity={activityOf(activity, s)} />
                       <span className="leaf-title">{s.title}</span>
+                      {s.account && <span className="account-tag" title={`Conta ${s.account}`}>{s.account}</span>}
                       {props.unread(s) && !activityOf(activity, s) && <span className="unread-dot" title="Terminou enquanto você estava em outra conversa" />}
                     </button>
                   ))}
@@ -484,7 +502,7 @@ function Sidebar(props: {
 
 // ---------- barra de ícones (sempre visível) ----------
 
-type View = "home" | "dashboard";
+type View = "home" | "dashboard" | "router" | "skills";
 
 function Rail({ view, setView, footer }: { view: View; setView: (v: View) => void; footer: React.ReactNode }) {
   const item = (v: View, label: string, icon: React.ReactNode) => (
@@ -499,6 +517,10 @@ function Rail({ view, setView, footer }: { view: View; setView: (v: View) => voi
         <svg width="17" height="17" viewBox="0 0 16 16"><path d="M2.5 7 8 2.5 13.5 7v6a.5.5 0 0 1-.5.5h-3v-4h-4v4H3a.5.5 0 0 1-.5-.5Z" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" /></svg>)}
       {item("dashboard", "Dashboard",
         <svg width="17" height="17" viewBox="0 0 16 16"><rect x="2" y="2" width="5" height="6" rx="1.2" fill="none" stroke="currentColor" strokeWidth="1.4" /><rect x="9" y="2" width="5" height="3.5" rx="1.2" fill="none" stroke="currentColor" strokeWidth="1.4" /><rect x="9" y="7.5" width="5" height="6.5" rx="1.2" fill="none" stroke="currentColor" strokeWidth="1.4" /><rect x="2" y="10" width="5" height="4" rx="1.2" fill="none" stroke="currentColor" strokeWidth="1.4" /></svg>)}
+      {item("router", "Roteador",
+        <svg width="17" height="17" viewBox="0 0 16 16"><circle cx="3.5" cy="8" r="1.8" fill="none" stroke="currentColor" strokeWidth="1.4" /><circle cx="12.5" cy="3.5" r="1.8" fill="none" stroke="currentColor" strokeWidth="1.4" /><circle cx="12.5" cy="12.5" r="1.8" fill="none" stroke="currentColor" strokeWidth="1.4" /><path d="M5.3 8h2.2l3.2-3.6M7.5 8l3.2 3.6" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>)}
+      {item("skills", "Skills",
+        <svg width="17" height="17" viewBox="0 0 16 16"><path d="M8 1.5l1.6 3.7 4 .4-3 2.8.9 4-3.5-2-3.5 2 .9-4-3-2.8 4-.4L8 1.5z" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" /></svg>)}
       <div className="grow-y" />
       {footer}
     </nav>
@@ -768,7 +790,7 @@ export default function App() {
     return sessions && sorted.filter((s) => matches(s, q));
   }, [sorted, query, hits]);
 
-  const [view, setView] = useState<View>(() => (load<View>("lume.view", "home") === "dashboard" ? "dashboard" : "home"));
+  const [view, setView] = useState<View>(() => ((["dashboard", "router", "skills"] as View[]).find((v) => v === load<View>("lume.view", "home")) ?? "home"));
   const changeView = (v: View) => (setView(v), save("lume.view", v));
 
   return (
@@ -777,25 +799,33 @@ export default function App() {
       {view === "home" && <button className="sidebar-toggle icon-btn" onClick={toggleSidebar} title={`${collapsed ? "Mostrar" : "Ocultar"} barra lateral (Ctrl+B)`} aria-label="Alternar barra lateral">
         <svg width="16" height="16" viewBox="0 0 16 16"><rect x="2" y="2.5" width="12" height="11" rx="2" fill="none" stroke="currentColor" strokeWidth="1.3" /><path d="M6 2.5v11" stroke="currentColor" strokeWidth="1.3" /></svg>
       </button>}
-      <div className={`shell ${collapsed ? "collapsed" : ""} ${view === "dashboard" ? "dash" : ""}`}>
+      <div className={`shell ${collapsed ? "collapsed" : ""} ${view !== "home" ? "dash" : ""}`}>
         <Rail view={view} setView={changeView}
           footer={<FooterMenu focus={focus} update={update} openSettings={(sec) => setSettings(sec ?? "focus")} harness={harness} />} />
         <Sidebar projects={projects} query={query} setQuery={setQuery} current={current} select={setCurrent} notify={notify}
           focus={focus} openSettings={(sec) => setSettings(sec ?? "focus")}
-          startDraft={(provider, project) => setCurrent({ provider, project, id: "", title: "Nova conversa", updated: Date.now() })}
+          startDraft={(provider, project, account) => setCurrent({ provider, project, id: "", title: "Nova conversa", updated: Date.now(), account })}
           unread={unread} searching={searching} />
         <main className="content">
-          {view === "dashboard" ? (
+          {view === "router" ? (
+            <RouterView sessions={sorted} notify={notify} onChanged={() => reloadRef.current()} />
+          ) : view === "dashboard" ? (
             <Dashboard sessions={sorted} notify={notify} open={(s) => (changeView("home"), setCurrent(s))} />
+          ) : view === "skills" ? (
+            <SkillsView projects={allProjects} notify={notify} />
           ) : current ? (
             <Chat
-              key={`${current.provider}:${current.id || "nova:" + current.project}`}
+              key={`${current.provider}:${current.id || `nova:${current.project}:${current.account ?? ""}`}`}
               session={current}
               archived={archived}
               pinned={pins.includes(`${current.provider}:${current.id}`)}
               onPin={()=>togglePin(current)}
               onChanged={()=>reloadRef.current()}
               notify={notify}
+              onSessionChange={(s) => {
+                setCurrent(s); // conta trocada (rascunho) ou conversa movida de conta
+                if (s.id) setSessions((all) => (all ?? []).map((x) => (sameSession(x, s) ? s : x)));
+              }}
               onCreated={(s) => {
                 generation.current++;
                 setCurrent(s); // a conversa nova vira uma sessão de verdade

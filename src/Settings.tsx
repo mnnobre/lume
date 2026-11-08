@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { api, projectName } from "./api";
+import { api, projectName, type Account } from "./api";
+import { accountName, reloadAccounts, reloadClaudeAccounts, reloadAntigravityAccounts, useClaudeAccounts, useAntigravityAccounts } from "./accounts";
 import type { FocusApi } from "./focus";
 import type { HarnessApi } from "./harness";
 
-export type Section = "focus" | "harness" | "notifications";
+export type Section = "focus" | "accounts" | "harness" | "notifications";
 
 function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
@@ -186,8 +187,198 @@ function NotificationSettings({ on, set }: { on: boolean; set: (v: boolean) => v
   );
 }
 
+function ProviderAccountSection({
+  title,
+  sub,
+  accounts,
+  onAdd,
+  onRemove,
+  onLogin,
+  loginLabel,
+  addHint,
+}: {
+  title: string;
+  sub: string;
+  accounts: Account[];
+  onAdd: (name: string) => Promise<void>;
+  onRemove?: (name: string) => Promise<void>;
+  onLogin: (account: string | null) => void;
+  loginLabel?: (a: Account) => string;
+  addHint: string;
+}) {
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [busyRemove, setBusyRemove] = useState<string | null>(null);
+
+  const handleAdd = async () => {
+    const n = name.trim().toLowerCase();
+    if (!n || busy) return;
+    setBusy(true);
+    try {
+      await onAdd(n);
+      setName("");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRemove = async (accName: string) => {
+    if (!onRemove || busyRemove) return;
+    setBusyRemove(accName);
+    try {
+      await onRemove(accName);
+      setDeleting(null);
+    } finally {
+      setBusyRemove(null);
+    }
+  };
+
+  return (
+    <div className="accounts-section" style={{ marginBottom: "24px" }}>
+      <h3>{title}</h3>
+      <p className="sub">{sub}</p>
+      {accounts.map((a) => (
+        <div key={a.name ?? ""} className="setting">
+          <div className="setting-text">
+            <b>{accountName(a.name)}{a.plan && <span className="plan">{a.plan[0].toUpperCase() + a.plan.slice(1)}</span>}</b>
+            <p>{a.logged_in ? a.email ?? "Logada" : "Sem login"} · <span className="account-dir">{a.dir}</span></p>
+          </div>
+          <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+            <button className="btn small" onClick={() => onLogin(a.name)}>
+              {loginLabel ? loginLabel(a) : a.logged_in ? "Entrar de novo" : "Entrar"}
+            </button>
+            {a.name && onRemove && (
+              deleting === a.name ? (
+                <>
+                  <button
+                    className="btn small danger"
+                    disabled={busyRemove === a.name}
+                    onClick={() => handleRemove(a.name!)}
+                  >
+                    {busyRemove === a.name ? "Apagando…" : "Confirmar"}
+                  </button>
+                  <button
+                    className="btn small"
+                    disabled={busyRemove === a.name}
+                    onClick={() => setDeleting(null)}
+                  >
+                    Cancelar
+                  </button>
+                </>
+              ) : (
+                <button
+                  className="btn small danger"
+                  onClick={() => setDeleting(a.name!)}
+                  title="Apagar esta conta do Lume"
+                >
+                  Apagar
+                </button>
+              )
+            )}
+          </div>
+        </div>
+      ))}
+      <div className="setting column">
+        <div className="setting-text">
+          <b>Adicionar conta</b>
+          <p>{addHint}</p>
+        </div>
+        <div className="account-add">
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="ex.: trabalho"
+            onKeyDown={(e) => e.key === "Enter" && name.trim() && handleAdd()}
+          />
+          <button className="btn small primary" disabled={!name.trim() || busy} onClick={handleAdd}>
+            {busy ? "Adicionando…" : "Adicionar"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AccountSettings({ notify }: { notify: (m: string) => void }) {
+  const claudeAccounts = useClaudeAccounts();
+  const agyAccounts = useAntigravityAccounts();
+
+  useEffect(() => {
+    const onFocus = () => void reloadAccounts().catch(() => {});
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
+
+  const addClaude = async (n: string) => {
+    try {
+      await api.addClaudeAccount(n);
+      await reloadClaudeAccounts();
+      notify(`Conta "${n}" criada. Termine o login na janela que abriu.`);
+    } catch (e) {
+      notify(String(e));
+    }
+  };
+
+  const removeClaude = async (n: string) => {
+    try {
+      await api.removeClaudeAccount(n);
+      await reloadClaudeAccounts();
+      notify(`Conta "${n}" apagada.`);
+    } catch (e) {
+      notify(String(e));
+    }
+  };
+
+  const addAgy = async (n: string) => {
+    try {
+      await api.addAntigravityAccount(n);
+      await reloadAntigravityAccounts();
+      notify(`Conta "${n}" criada. Termine o login na janela que abriu.`);
+    } catch (e) {
+      notify(String(e));
+    }
+  };
+
+  const removeAgy = async (n: string) => {
+    try {
+      await api.removeAntigravityAccount(n);
+      await reloadAntigravityAccounts();
+      notify(`Conta "${n}" apagada.`);
+    } catch (e) {
+      notify(String(e));
+    }
+  };
+
+  return (
+    <>
+      <ProviderAccountSection
+        title="Contas do Claude Code"
+        sub="Cada conta tem login e conversas próprios. Ao começar uma conversa, o Lume pergunta qual conta usar; o Roteador pode passar a tarefa de uma conta para outra quando a cota acaba."
+        accounts={claudeAccounts}
+        onAdd={addClaude}
+        onRemove={removeClaude}
+        onLogin={(a) => api.loginClaudeAccount(a).catch((e) => notify(String(e)))}
+        addHint="Um nome curto (letras minúsculas, números e hífen). Abre uma janela com o login do Claude Code; você entra com a outra conta no navegador."
+      />
+      <div className="menu-sep" style={{ margin: "24px 0" }} />
+      <ProviderAccountSection
+        title="Contas do Antigravity"
+        sub="Permite abrir instâncias com perfis separados do Antigravity. Ao começar uma conversa, você pode escolher qual conta usar e ver a cota individual de cada uma."
+        accounts={agyAccounts}
+        onAdd={addAgy}
+        onRemove={removeAgy}
+        onLogin={(a) => api.loginAntigravityAccount(a).catch((e) => notify(String(e)))}
+        loginLabel={(a) => (a.logged_in ? "Abrir janela" : "Entrar")}
+        addHint="Um nome curto (letras minúsculas, números e hífen). Abre uma nova janela do Antigravity com perfil isolado para você entrar com a outra conta Google."
+      />
+    </>
+  );
+}
+
 const NAV: { id: Section; label: string; icon: ReactNode }[] = [
   { id: "focus", label: "Modo Foco", icon: <svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="1.4" /><circle cx="8" cy="8" r="2.5" fill="none" stroke="currentColor" strokeWidth="1.4" /></svg> },
+  { id: "accounts", label: "Contas", icon: <svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="5.5" r="2.5" fill="none" stroke="currentColor" strokeWidth="1.4" /><path d="M3 13.5c.6-2.4 2.6-3.8 5-3.8s4.4 1.4 5 3.8" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg> },
   { id: "harness", label: "Harness", icon: <svg width="14" height="14" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="10" rx="2" fill="none" stroke="currentColor" strokeWidth="1.4" /><path d="M5 7l2 1.5L5 10M8.5 10h2.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg> },
   { id: "notifications", label: "Notificações", icon: <svg width="14" height="14" viewBox="0 0 16 16"><path d="M4 11V7a4 4 0 0 1 8 0v4l1 1.5H3zM6.5 14a1.6 1.6 0 0 0 3 0" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" /></svg> },
 ];
@@ -226,6 +417,7 @@ export function Settings({ onClose, focus, projects, harness, notifications, ini
             <svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
           </button>
           {section === "focus" && <FocusSettings f={focus} projects={projects} />}
+          {section === "accounts" && <AccountSettings notify={notify} />}
           {section === "harness" && <HarnessSettings h={harness} notify={notify} />}
           {section === "notifications" && <NotificationSettings {...notifications} />}
         </div>

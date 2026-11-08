@@ -62,7 +62,7 @@ export const primaryWindow = (r: UsageReport) => r.windows.find((w) => !/seman/i
 const tokens = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(n % 1_000_000 ? 1 : 0)}M` : `${(n / 1000).toFixed(1)}k`);
 
 /** Anel de uso da conversa: clicando, abre contexto + limites do plano (como no Claude). */
-export function UsageRing({ provider, context, onCompact }: { provider: Provider; context?: [number, number]; onCompact?: () => void }) {
+export function UsageRing({ provider, account, context, onCompact }: { provider: Provider; account?: string; context?: [number, number]; onCompact?: () => void }) {
   const { data, loading, load } = useUsage();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -73,7 +73,7 @@ export function UsageRing({ provider, context, onCompact }: { provider: Provider
     window.addEventListener("mousedown", out);
     return () => window.removeEventListener("mousedown", out);
   }, [open]);
-  const report = data?.find((r) => r.provider === provider);
+  const report = data?.find((r) => r.provider === provider && r.account === account);
   const top = report && primaryWindow(report);
   const ctxPct = context ? (context[0] / context[1]) * 100 : null;
   // o anel mostra o que estiver mais perto do limite: contexto da conversa ou a janela de 5 h

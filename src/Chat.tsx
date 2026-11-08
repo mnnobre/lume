@@ -11,6 +11,7 @@ import { ModelSelector } from "./ModelSelector";
 import { GitBar, ModeSelector, PlusMenu } from "./ComposerParts";
 import { UsageRing } from "./usage";
 import { ProviderIcon } from "./ProviderIcon";
+import { AccountSelector } from "./AccountSelector";
 import { useCodexIntegrations } from "./codexComposer";
 import { invoke } from "@tauri-apps/api/core";
 import { openPath, openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
@@ -543,6 +544,8 @@ const Composer = memo(function Composer({
   onCompact,
   context,
   settingsNotice,
+  onDismissNotice,
+  accountControl,
 }: {
   session: Session;
   busy: boolean;
@@ -560,6 +563,8 @@ const Composer = memo(function Composer({
   onCompact?: () => void;
   context?: [number, number];
   settingsNotice?: string;
+  onDismissNotice?: () => void;
+  accountControl?: ReactNode;
 }) {
   // rascunho por conversa: o que você começou a digitar volta quando você reabre a conversa
   const draftKey = `lume.draft.${session.provider}:${session.id || "nova:" + session.project}`;
@@ -623,6 +628,14 @@ const Composer = memo(function Composer({
   };
   return (
     <div className="composer-wrap">
+      {settingsNotice && (
+        <div className="composer-notice" role="status">
+          <span>{settingsNotice}</span>
+          <button onClick={onDismissNotice} aria-label="Fechar aviso" title="Fechar">
+            <svg width="10" height="10" viewBox="0 0 12 12"><path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+          </button>
+        </div>
+      )}
       {above}
       <GitBar session={session} refreshKey={busy} onAsk={!busy ? (prompt) => void onSend(prompt, []) : undefined} />
       <div
@@ -695,6 +708,7 @@ const Composer = memo(function Composer({
             <ModeSelector provider={session.provider} mode={options.mode ?? currentMode} onChange={(mode) => onOptionsChange({ ...options, mode })} />
           </div>
           <div className="composer-bar-right">
+            {accountControl}
             <ModelSelector
               session={session}
               options={options}
@@ -702,10 +716,9 @@ const Composer = memo(function Composer({
               notify={notify}
               currentModel={currentModel}
             />
-            <UsageRing provider={session.provider} context={context} onCompact={!busy ? (session.provider === "claude" ? () => void onSend("/compact", []) : session.provider === "codex" ? onCompact : session.provider === "antigravity" ? () => void onSend("/compact", []) : undefined) : undefined} />
+            <UsageRing provider={session.provider} account={session.account} context={context} onCompact={!busy ? (session.provider === "claude" ? () => void onSend("/compact", []) : session.provider === "codex" ? onCompact : session.provider === "antigravity" ? () => void onSend("/compact", []) : undefined) : undefined} />
           </div>
         </div>
-        {settingsNotice && <div className="composer-settings-notice" role="status">{settingsNotice}</div>}
     </div>
   );
 });
@@ -718,7 +731,7 @@ const optsKey = (s: Session) => (s.id ? `lume.opts.${s.provider}:${s.id}` : `lum
 const readOpts = (k: string): SavedOptions | null => {
   try { return JSON.parse(localStorage.getItem(k) ?? "null"); } catch { return null; }
 };
-function saveOpts(s: Session, o: SavedOptions) {
+export function saveOpts(s: Session, o: SavedOptions) {
   try {
     const v = JSON.stringify({ model: o.model, effort: o.effort, mode: o.mode, efforts: o.efforts });
     localStorage.setItem(optsKey(s), v);
@@ -751,7 +764,7 @@ function QueueList({ items, onNow, onRemove }: { items: Queued[]; onNow: (q: Que
 
 // ---------- chat ----------
 
-export function Chat({ session, notify, onCreated, archived = false, onChanged, pinned = false, onPin }: { session: Session; notify: (m: string) => void; onCreated: (s: Session) => void; archived?: boolean; onChanged?: () => void; pinned?: boolean; onPin?: () => void }) {
+export function Chat({ session, notify, onCreated, archived = false, onChanged, pinned = false, onPin, onSessionChange }: { session: Session; notify: (m: string) => void; onCreated: (s: Session) => void; archived?: boolean; onChanged?: () => void; pinned?: boolean; onPin?: () => void; onSessionChange?: (s: Session) => void }) {
   const draft = !session.id; // conversa nova: só vira sessão no primeiro envio
   const [messages, setMessages] = useState<Message[] | null | undefined>(undefined); // undefined = carregando
   const view = useLiveView(session);
@@ -798,8 +811,8 @@ export function Chat({ session, notify, onCreated, archived = false, onChanged, 
           notify(String(error));
         }
       });
-    } else if (next.model !== previous.model || next.effort !== previous.effort) {
-      setSettingsNotice("Modelo e esforço serão usados no próximo envio, inclusive nas mensagens da fila.");
+    } else if (session.id && (next.model !== previous.model || next.effort !== previous.effort)) {
+      setSettingsNotice("Modelo e esforço passam a valer na próxima mensagem, inclusive nas da fila.");
     }
   };
   const [currentMode, setCurrentMode] = useState<string>();
@@ -890,6 +903,7 @@ export function Chat({ session, notify, onCreated, archived = false, onChanged, 
 
   async function send(t: string, imgs: Attachment[]): Promise<boolean> {
     atEnd.current = true;
+    setSettingsNotice(""); // o modelo vai ler esta mensagem com a configuração nova: o aviso já cumpriu o papel
     setOptimistic({role:"user",text:t,images:imgs.map(a=>a.preview)});
     setSending(true);
     try { await startRuntime(); } catch(e) {notify(String(e));setSending(false);return false;}
@@ -897,7 +911,7 @@ export function Chat({ session, notify, onCreated, archived = false, onChanged, 
     const sendOptions = {...optionsRef.current};
     if (draft) {
       try {
-        const created = await api.newChat(session.provider, session.project, t, imgs.map((a) => a.image), sendOptions);
+        const created = await api.newChat(session.provider, session.project, t, imgs.map((a) => a.image), sendOptions, session.account);
         saveOpts(created, { ...optionsRef.current, efforts: efforts.current }); // preserve choices made while creation was in flight
 
         onCreated(created); // remonta o chat já com o id; os eventos ao vivo seguem chegando
@@ -982,7 +996,7 @@ export function Chat({ session, notify, onCreated, archived = false, onChanged, 
         <ProviderIcon p={session.provider} />
         <div className="chat-title">
           <h2 title={session.title}>{session.title}</h2>
-          <p>{projectName(session.project)} · {ago(session.updated)}</p>
+          <p>{projectName(session.project)} · {ago(session.updated)}{session.account && <span className="account-tag head" title={`Conta ${session.account} desta conversa`}>{session.account}</span>}</p>
         </div>
         <div className="head-icons">
           <button className="icon-btn" title="Abrir pasta do projeto" aria-label="Abrir pasta do projeto"
@@ -1082,6 +1096,8 @@ export function Chat({ session, notify, onCreated, archived = false, onChanged, 
           onZoom={setZoomed}
           currentModel={model}
           settingsNotice={settingsNotice}
+          onDismissNotice={() => setSettingsNotice("")}
+          accountControl={onSessionChange && <AccountSelector session={session} busy={!!view?.busy} onChange={onSessionChange} notify={notify} />}
           currentMode={currentMode}
           onCompact={!draft && !external ? () => void compact() : undefined}
           context={view?.busy ? view.context ?? context : context ?? view?.context ?? undefined}

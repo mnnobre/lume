@@ -1,0 +1,5 @@
+/target/
+/workspace/
+/test-results/
+*.log
+*.pid

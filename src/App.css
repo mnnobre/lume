@@ -964,3 +964,303 @@ button.composer-usage:hover, button.composer-usage.on { background: rgba(255, 25
 .dash-detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .dash-prompts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; max-height: 360px; overflow: auto; }
 .dash-prompts li { display: flex; flex-direction: column; gap: 1px; font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+
+/* ---------- roteador ---------- */
+.router-quotas { display: flex; flex-wrap: wrap; gap: 8px; }
+.router-quota { display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; background: var(--raised); border: 1px solid var(--line); font-size: 12.5px; }
+.router-quota.off { opacity: 0.55; }
+.router-flag { font-size: 11px; font-weight: 600; color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
+.router-compose textarea, .router-settings textarea, .router-input {
+  width: 100%; resize: vertical; font: inherit; color: var(--text); background: var(--field); border: 1px solid var(--line); border-radius: 9px; padding: 9px 11px; outline: none;
+}
+.router-compose textarea:focus, .router-settings textarea:focus, .router-input:focus { border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
+.router select {
+  appearance: none; font: inherit; font-size: 12.5px; color: var(--text); background-color: var(--field); border: 1px solid var(--line); border-radius: 7px;
+  padding: 5px 26px 5px 9px; max-width: 100%; cursor: default;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M2 3.5l3 3 3-3' fill='none' stroke='%23888' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 8px center;
+}
+.router select:hover { background-color: var(--hover); }
+.router select:focus-visible, .segmented button:focus-visible, .router .btn:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent); outline-offset: 1px; }
+.router select option { background: var(--raised); color: var(--text); }
+.router-compose-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.router-levels { display: flex; flex-wrap: wrap; gap: 6px; }
+.router-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.router-card { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 9px; background: var(--field); }
+.router-card-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.router-level { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 2px 8px; border-radius: 999px; background: var(--active); color: var(--text); }
+.router-level.leve { background: color-mix(in srgb, var(--ok, #30d158) 18%, transparent); }
+.router-level.medio { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.router-level.pesado { background: color-mix(in srgb, var(--warn) 20%, transparent); }
+.router-active { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.router-active > .chat { flex: 1; min-height: 0; }
+.router-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 0 32px 10px; border-bottom: 1px solid var(--line); }
+.router-bar .grow { flex: 1; }
+.router-fields { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.router-num { display: inline-flex; align-items: center; gap: 4px; }
+.router-num input { width: 64px; font: inherit; color: var(--text); background: var(--field); border: 1px solid var(--line); border-radius: 7px; padding: 4px 6px; }
+.router-level-block { display: flex; flex-direction: column; gap: 6px; padding: 8px 0 12px; border-bottom: 1px solid var(--line); }
+.router-level-block:last-child { border-bottom: 0; }
+.router-level-block > .chip { align-self: flex-start; }
+.router-target { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.router-target .grow { flex: 1; }
+.router .sub { margin: 0; }
+.segmented { display: inline-flex; padding: 2px; gap: 2px; border-radius: 9px; background: var(--field); border: 1px solid var(--line); }
+.segmented button { border: 0; background: transparent; color: var(--muted); font-size: 12.5px; padding: 4px 11px; border-radius: 7px; cursor: default; white-space: nowrap; }
+.segmented button:hover { color: var(--text); }
+.segmented button.on { background: var(--raised); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18); }
+.router-bar { padding: 0 24px 10px 32px; }
+.router-why { min-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.router-bar .btn svg, .router-level-block .btn svg { display: block; }
+.router-level-block > .btn { align-self: flex-start; }
+.icon-btn.danger:hover { color: var(--err); }
+.icon-btn:disabled { opacity: 0.3; pointer-events: none; }
+.router .btn:disabled { pointer-events: none; }
+.dash-card .setting:last-child { border-bottom: 0; padding-bottom: 4px; }
+
+/* ---------- contas do Claude ---------- */
+.account-tag { flex: none; font-size: 10.5px; font-weight: 600; color: var(--muted); background: var(--field); padding: 0 6px; border-radius: 999px; max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu-account { margin-left: auto; font-size: 11.5px; color: var(--muted); }
+.account-dir { font-family: var(--mono); font-size: 11px; color: var(--faint); }
+.account-add { display: flex; gap: 8px; }
+.account-add input { flex: 1; font: inherit; color: var(--text); background: var(--field); border: 1px solid var(--line); border-radius: 7px; padding: 5px 9px; outline: none; }
+.setting-text .plan { margin-left: 8px; }
+
+/* aviso da caixa de mensagem: flutua acima dela, sem empurrar o layout */
+.composer-wrap { position: relative; }
+.composer-notice {
+  position: absolute; left: 50%; bottom: calc(100% + 6px); transform: translateX(-50%); z-index: 5;
+  display: flex; align-items: center; gap: 8px; max-width: min(620px, calc(100% - 56px));
+  padding: 6px 6px 6px 12px; border-radius: 999px; font-size: 12px; color: var(--text);
+  background: var(--raised); border: 1px solid var(--line); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  animation: slide-up 0.18s ease-out;
+}
+.composer-notice span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composer-notice button { flex: none; width: 20px; height: 20px; border: 0; border-radius: 50%; background: transparent; color: var(--muted); display: grid; place-items: center; cursor: default; padding: 0; }
+.composer-notice button:hover { background: var(--hover); color: var(--text); }
+.composer-notice svg { display: block; }
+
+/* seletor de conta do Claude (mesmo visual do seletor de modelo) */
+.account-avatar {
+  width: 18px; height: 18px; border-radius: 50%; flex: none; display: inline-grid; place-items: center;
+  font-size: 10px; font-weight: 700; color: #fff; background: linear-gradient(135deg, #d97757, #b5502f);
+}
+.account-selector .model-pill-btn { gap: 6px; }
+.account-popup { min-width: 280px; }
+.account-row { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.account-text { display: flex; flex-direction: column; min-width: 0; }
+.account-text .model-tier { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-option-row.disabled { opacity: 0.55; }
+.model-option-row.disabled:hover { background: transparent; }
+.account-hint { margin: 6px 10px 4px; font-size: 11.5px; color: var(--muted); }
+.account-confirm { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; max-width: 300px; }
+.account-confirm p { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+.account-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 2px; }
+.account-tag.head { margin-left: 6px; vertical-align: 1px; }
+
+/* ---------- Skills View ---------- */
+.skills-view { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.skills-head-title { display: flex; align-items: center; gap: 8px; }
+.refresh-skills { margin-top: 2px; }
+.skills-filters { display: flex; align-items: center; gap: 10px; }
+.skills-search { min-width: 260px; position: relative; }
+.skills-search input { min-width: 0; }
+.clear-query { background: transparent; border: 0; color: var(--muted); cursor: pointer; font-size: 14px; padding: 0 4px; }
+.clear-query:hover { color: var(--text); }
+
+.skills-body { flex: 1; display: flex; flex-direction: column; gap: 16px; padding: 0 24px 24px; overflow-y: auto; }
+.skills-tiles { margin-top: 4px; }
+.skills-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 0; }
+.skills-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.skills-filter-label { font-size: 11.5px; font-weight: 600; color: var(--muted); margin-right: 2px; }
+
+/* Alternador de visualização Card / Lista */
+.skills-view-toggle {
+  display: flex; align-items: center; background: var(--field);
+  border: 1px solid var(--line); border-radius: 8px; padding: 2px; gap: 2px;
+}
+.toggle-mode-btn {
+  display: flex; align-items: center; gap: 5px; padding: 4px 8px; border: 0;
+  border-radius: 6px; background: transparent; color: var(--muted);
+  font-size: 11.5px; font-weight: 550; cursor: pointer; transition: all 0.12s;
+}
+.toggle-mode-btn:hover { color: var(--text); }
+.toggle-mode-btn.active {
+  background: var(--raised); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+@media (prefers-color-scheme: dark) {
+  .toggle-mode-btn.active { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4); }
+}
+
+.skills-list { display: grid; gap: 14px; }
+.skills-list.card { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); align-items: start; }
+.skills-list.list { display: flex; flex-direction: column; gap: 6px; }
+.skills-empty { grid-column: 1 / -1; padding: 40px 0; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+
+/* Linha da Lista (Modo Lista) */
+.skill-row {
+  background: var(--raised); border: 1px solid var(--line); border-radius: 10px;
+  padding: 8px 14px; display: flex; align-items: center; gap: 14px; min-width: 0;
+  transition: border-color 0.12s, background 0.12s;
+}
+.skill-row:hover {
+  border-color: rgba(0, 0, 0, 0.12); background: var(--hover);
+}
+@media (prefers-color-scheme: dark) {
+  .skill-row:hover { border-color: rgba(255, 255, 255, 0.14); }
+}
+
+.skill-row-main {
+  flex: 1.2; min-width: 0; display: flex; flex-direction: column; gap: 2px;
+}
+.skill-row-name-group {
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+}
+.skill-row-name {
+  font-size: 13px; font-weight: 650; letter-spacing: -0.01em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.skill-row-desc {
+  font-size: 11.5px; color: var(--muted); margin: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.4;
+}
+.skill-row-desc.empty { font-style: italic; opacity: 0.65; }
+
+.skill-row-tags {
+  flex: 1; min-width: 180px; display: flex; align-items: center;
+}
+.skill-row-actions {
+  flex: none; display: flex; align-items: center; gap: 6px;
+}
+
+.skill-card {
+  background: var(--raised); border: 1px solid var(--line); border-radius: 12px;
+  padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; min-height: 140px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03); transition: border-color 0.15s, box-shadow 0.15s;
+}
+.skill-card:hover { border-color: rgba(0, 0, 0, 0.12); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05); }
+@media (prefers-color-scheme: dark) {
+  .skill-card:hover { border-color: rgba(255, 255, 255, 0.15); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25); }
+}
+
+.skill-card-top { display: flex; flex-direction: column; gap: 8px; flex: 1; }
+.skill-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.skill-card-name-group { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.skill-card-name { font-size: 13.5px; font-weight: 650; margin: 0; letter-spacing: -0.01em; word-break: break-word; }
+.skill-loc-badge {
+  font-size: 10.5px; font-weight: 600; padding: 1.5px 6.5px; border-radius: 999px;
+  background: var(--field); color: var(--muted); white-space: nowrap;
+}
+.skill-loc-badge.multiple { background: rgba(10, 132, 255, 0.12); color: var(--accent); }
+
+.skill-card-actions { display: flex; align-items: center; gap: 4px; flex: none; }
+.skill-card-desc { font-size: 12.5px; color: var(--muted); line-height: 1.45; margin: 0; word-break: break-word; }
+.skill-card-desc.empty { font-style: italic; opacity: 0.7; }
+.skill-toggle-desc { all: unset; cursor: pointer; color: var(--accent); font-size: 11.5px; font-weight: 500; margin-top: 2px; display: inline-block; }
+.skill-toggle-desc:hover { text-decoration: underline; }
+
+.skill-card-footer {
+  display: flex; align-items: center; gap: 8px; padding-top: 10px; margin-top: auto;
+  border-top: 1px solid var(--line); min-height: 34px;
+}
+.skill-footer-label { font-size: 11px; font-weight: 600; color: var(--muted); flex: none; }
+
+/* Tags e Popover */
+.skill-tags-wrapper { position: relative; display: flex; align-items: center; flex: 1; min-width: 0; }
+.skill-tags-list { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; flex: 1; }
+.skill-tag {
+  display: inline-flex; align-items: center; gap: 5px; padding: 2.5px 7.5px; border-radius: 6px;
+  background: var(--field); border: 1px solid var(--line); font-size: 11px; font-weight: 500;
+  cursor: pointer; transition: background 0.12s; user-select: none;
+}
+.skill-tag:hover { background: var(--hover); }
+.skill-tag.claude { border-color: rgba(217, 119, 87, 0.35); }
+.skill-tag.antigravity { border-color: rgba(48, 176, 199, 0.35); }
+.skill-tag.codex { border-color: rgba(94, 92, 230, 0.35); }
+.skill-tag-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+.skill-tag-text { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.skill-tags-more-btn {
+  display: inline-flex; align-items: center; padding: 2.5px 7px; border-radius: 6px;
+  border: 1px dashed var(--faint); background: var(--field); color: var(--muted);
+  font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.12s;
+}
+.skill-tags-more-btn:hover, .skill-tags-more-btn.active {
+  background: var(--active); color: var(--text); border-color: var(--accent);
+}
+
+.skill-popover {
+  position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 50; width: 340px; max-width: 90vw;
+  background: var(--raised); border: 1px solid var(--line); border-radius: 11px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22); padding: 10px; display: flex; flex-direction: column;
+  gap: 8px; animation: pop 0.12s ease-out;
+}
+.skill-popover-head { display: flex; align-items: baseline; justify-content: space-between; border-bottom: 1px solid var(--line); padding-bottom: 6px; margin-bottom: 2px; }
+.skill-popover-title { font-size: 11.5px; font-weight: 650; color: var(--text); }
+.skill-popover-skill { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 160px; }
+.skill-popover-list { display: flex; flex-direction: column; gap: 6px; max-height: 240px; overflow-y: auto; padding-right: 2px; }
+.skill-popover-item {
+  display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 7px;
+  background: var(--field); border: 1px solid var(--line);
+}
+.skill-popover-badge { display: flex; align-items: center; gap: 4px; flex: none; font-size: 11px; font-weight: 600; min-width: 70px; }
+.skill-popover-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.skill-popover-target { font-size: 11.5px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.skill-popover-path { font-size: 10px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); }
+.skill-popover-action {
+  flex: none; display: flex; align-items: center; gap: 4px; padding: 4px 6px; border: 0;
+  border-radius: 5px; background: transparent; color: var(--muted); font-size: 11px; cursor: pointer;
+}
+.skill-popover-action:hover { background: var(--hover); color: var(--text); }
+
+/* Modal de SKILL.md */
+.skills-modal-backdrop {
+  position: fixed; inset: 0; z-index: 100; background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px); display: grid; place-items: center; padding: 20px; animation: pop 0.12s ease-out;
+}
+.skills-modal-content {
+  background: var(--raised); border: 1px solid var(--line); border-radius: 12px;
+  width: 100%; max-width: 760px; max-height: 85vh; display: flex; flex-direction: column;
+  overflow: hidden; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+}
+.skills-modal-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  padding: 14px 18px; border-bottom: 1px solid var(--line); flex: none;
+}
+.skills-modal-head h2 { margin: 0 0 2px; font-size: 16px; font-weight: 650; }
+.skills-modal-path { font-size: 11px; color: var(--muted); font-family: var(--mono); word-break: break-all; }
+.skills-modal-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+.skills-modal-body { padding: 18px 22px; overflow-y: auto; flex: 1; }
+
+/* Origens das Skills (Nativa, Plugin, Usuário/IA) */
+.origin-badge {
+  font-size: 10px; font-weight: 650; padding: 1px 5.5px; border-radius: 4px;
+  text-transform: uppercase; letter-spacing: 0.03em; white-space: nowrap; flex: none;
+}
+.origin-badge.origin-builtin {
+  background: rgba(10, 132, 255, 0.12); color: var(--accent); border: 1px solid rgba(10, 132, 255, 0.25);
+}
+.origin-badge.origin-plugin {
+  background: rgba(48, 209, 88, 0.12); color: var(--ok); border: 1px solid rgba(48, 209, 88, 0.25);
+}
+.origin-badge.origin-user {
+  background: rgba(255, 159, 10, 0.12); color: var(--warn); border: 1px solid rgba(255, 159, 10, 0.25);
+}
+
+.origin-chip-builtin.on { background: var(--accent); color: #fff; }
+.origin-chip-plugin.on { background: var(--ok); color: #fff; }
+.origin-chip-user.on { background: var(--warn); color: #fff; }
+
+.origin-num-builtin { color: var(--accent); }
+.origin-num-plugin { color: var(--ok); }
+.origin-num-user { color: var(--warn); }
+
+.skill-tag-origin-dot { width: 5px; height: 5px; border-radius: 50%; display: inline-block; margin-left: 2px; }
+.skill-tag-origin-dot.origin-builtin { background: var(--accent); }
+.skill-tag-origin-dot.origin-plugin { background: var(--ok); }
+.skill-tag-origin-dot.origin-user { background: var(--warn); }
+
+.skills-chips-group { display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 0; }
+.skill-popover-target { display: flex; align-items: center; gap: 6px; }
+
+

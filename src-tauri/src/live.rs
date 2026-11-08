@@ -297,6 +297,7 @@ fn spawn_claude(
     app: &AppHandle,
     resume: Option<&str>,
     cwd: &str,
+    account: Option<&str>,
 ) -> Result<(ClaudeProc, mpsc::Receiver<String>), String> {
     let mut cmd = Command::new("cmd"); // npm instala o claude como .cmd; via cmd /c ele resolve
     cmd.args([
@@ -315,12 +316,9 @@ fn spawn_claude(
     if let Some(id) = resume {
         cmd.args(["--resume", id]);
     }
-    // sem variáveis CLAUDE* herdadas (Lume aberto de dentro de uma sessão do app), senão a CLI se passa por ela
-    for (k, _) in std::env::vars() {
-        if k.to_uppercase().starts_with("CLAUDE") {
-            cmd.env_remove(k);
-        }
-    }
+    // sem variáveis CLAUDE* herdadas (Lume aberto de dentro de uma sessão do app), senão a CLI se passa por ela;
+    // conta extra = outra pasta de configuração
+    crate::accounts::claude_env(&mut cmd, account);
     hidden(&mut cmd)
         .current_dir(cwd)
         .stdin(Stdio::piped())
@@ -523,7 +521,7 @@ fn claude_send(
     let mut procs = live.claude.lock().unwrap();
     if !procs.contains_key(id) {
         busy_elsewhere(&s)?; // só checa quando o Lume ainda não é dono da sessão
-        let (p, _) = spawn_claude(app, Some(id), &s.project)?;
+        let (p, _) = spawn_claude(app, Some(id), &s.project, s.account.as_deref())?;
         procs.insert(id.to_string(), p);
     }
     emit(app, "claude", id, Event::Started {});
@@ -539,8 +537,9 @@ fn claude_new(
     text: &str,
     images: &[ImageIn],
     options: &TurnOptions,
+    account: Option<String>,
 ) -> Result<Session, String> {
-    let (p, rx) = spawn_claude(app, None, project)?;
+    let (p, rx) = spawn_claude(app, None, project, account.as_deref())?;
     claude_options(&p.stdin, options)?;
     write_line(&p.stdin, &claude_message(text, images))?;
     let id = rx.recv_timeout(Duration::from_secs(90)).map_err(|_| {
@@ -549,7 +548,8 @@ fn claude_new(
     })?;
     live.claude.lock().unwrap().insert(id.clone(), p);
     emit(app, "claude", &id, Event::Started {}); // a conversa nova já abre com o "trabalhando"
-    let s = Session::created("claude", id, project.to_string(), text);
+    let mut s = Session::created("claude", id, project.to_string(), text);
+    s.account = account;
     crate::sessions::claude_desktop_register(&s);
     remember(store, s.clone());
     Ok(s)
@@ -1178,7 +1178,7 @@ pub fn antigravity_bin() -> Option<PathBuf> {
     None
 }
 
-pub fn antigravity_project_id_for(project: &str) -> String {
+pub fn antigravity_project_id_for(project: &str, account: Option<&str>) -> String {
     if let Ok(id) = std::env::var("ANTIGRAVITY_PROJECT_ID") {
         if !id.is_empty() {
             return id;
@@ -1217,20 +1217,21 @@ pub fn antigravity_project_id_for(project: &str) -> String {
         }
     }
 
-    let app_storage = home
-        .join("AppData")
-        .join("Roaming")
-        .join("Antigravity")
-        .join("app_storage.json");
-    if app_storage.exists() {
-        if let Ok(content) = fs::read_to_string(&app_storage) {
-            if let Ok(v) = serde_json::from_str::<Value>(&content) {
-                if let Some(id) = v["lastCreatedProjectId"]
-                    .as_str()
-                    .or_else(|| v["new-convo-last-selected-project"].as_str())
-                {
-                    if !id.is_empty() {
-                        return id.to_string();
+    let storages = [
+        crate::accounts::antigravity_dir(account).join("app_storage.json"),
+        home.join("AppData").join("Roaming").join("Antigravity").join("app_storage.json"),
+    ];
+    for app_storage in storages {
+        if app_storage.exists() {
+            if let Ok(content) = fs::read_to_string(&app_storage) {
+                if let Ok(v) = serde_json::from_str::<Value>(&content) {
+                    if let Some(id) = v["lastCreatedProjectId"]
+                        .as_str()
+                        .or_else(|| v["new-convo-last-selected-project"].as_str())
+                    {
+                        if !id.is_empty() {
+                            return id.to_string();
+                        }
                     }
                 }
             }
@@ -1240,7 +1241,7 @@ pub fn antigravity_project_id_for(project: &str) -> String {
     "outside-of-project".to_string()
 }
 
-fn run_agentapi(subcmd: &str, args: &[&str], cwd: Option<&str>) -> Result<Value, String> {
+fn run_agentapi(subcmd: &str, args: &[&str], cwd: Option<&str>, account: Option<&str>) -> Result<Value, String> {
     let bin =
         antigravity_bin().ok_or_else(|| "não achei o executável do Antigravity".to_string())?;
 
@@ -1251,8 +1252,8 @@ fn run_agentapi(subcmd: &str, args: &[&str], cwd: Option<&str>) -> Result<Value,
     let candidate_addrs: Vec<(String, String)> = match (env_addr, env_token) {
         (Some(a), Some(t)) if !a.is_empty() && !t.is_empty() => vec![(a, t)],
         _ => {
-            // Descobre o language_server ativo e as portas em que ele escuta
-            let (token, ports) = crate::usage::antigravity_server()
+            // Descobre o language_server ativo e as portas em que ele escuta para a conta
+            let (token, ports) = crate::usage::antigravity_server(account)
                 .map_err(|e| format!("certifique-se de que o Antigravity está aberto: {e}"))?;
             ports
                 .into_iter()
@@ -1268,7 +1269,7 @@ fn run_agentapi(subcmd: &str, args: &[&str], cwd: Option<&str>) -> Result<Value,
     let home = PathBuf::from(std::env::var("USERPROFILE").unwrap_or_default());
     let app_data = home.join(".gemini").join("antigravity");
     let project_id = cwd
-        .map(antigravity_project_id_for)
+        .map(|c| antigravity_project_id_for(c, account))
         .unwrap_or_else(|| "outside-of-project".to_string());
 
     let mut last_err = String::new();
@@ -1599,7 +1600,7 @@ fn antigravity_send(
         full_text.push_str("</ADDITIONAL_METADATA>");
     }
 
-    run_agentapi("send-message", &[id, &full_text], Some(&s.project))?;
+    run_agentapi("send-message", &[id, &full_text], Some(&s.project), s.account.as_deref())?;
     watch_antigravity_turn(app.clone(), id.to_string(), s.file);
     Ok(())
 }
@@ -1612,6 +1613,7 @@ fn antigravity_new(
     text: &str,
     images: &[ImageIn],
     options: &TurnOptions,
+    account: Option<String>,
 ) -> Result<Session, String> {
     let title: String = text
         .lines()
@@ -1628,7 +1630,7 @@ fn antigravity_new(
 
     let initial_text = apply_antigravity_mode(text, options.mode.as_deref());
     args.push(&initial_text);
-    let resp = run_agentapi("new-conversation", &args, Some(project))?;
+    let resp = run_agentapi("new-conversation", &args, Some(project), account.as_deref())?;
     let new_id = resp["response"]["newConversation"]["conversationId"]
         .as_str()
         .ok_or_else(|| "o Antigravity não devolveu o ID da nova conversa".to_string())?
@@ -1641,7 +1643,7 @@ fn antigravity_new(
             img_msg.push_str(&format!("- {}\n", img.to_string_lossy().replace('\\', "/")));
         }
         img_msg.push_str("</ADDITIONAL_METADATA>");
-        let _ = run_agentapi("send-message", &[&new_id, &img_msg], Some(project));
+        let _ = run_agentapi("send-message", &[&new_id, &img_msg], Some(project), account.as_deref());
     }
 
     let home = PathBuf::from(std::env::var("USERPROFILE").unwrap_or_default());
@@ -1654,7 +1656,9 @@ fn antigravity_new(
         .join("logs")
         .join("transcript.jsonl");
     let mut s = Session::created("antigravity", new_id.clone(), project.to_string(), text);
+    s.account = account.clone();
     s.file = Some(log_file.clone());
+    crate::accounts::antigravity_save_session_account(&new_id, account.as_deref());
     remember(store, s.clone());
     emit(app, "antigravity", &new_id, Event::Started {});
     watch_antigravity_turn(app.clone(), new_id, Some(log_file));
@@ -1668,7 +1672,8 @@ async fn antigravity_answer(id: &str, request_id: &str, allow: bool) -> Result<(
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
 
-    let (token, ports) = crate::usage::antigravity_server()?;
+    let account = crate::accounts::antigravity_get_session_account(id);
+    let (token, ports) = crate::usage::antigravity_server(account.as_deref())?;
     let client = crate::usage::http();
     let body = json!({
         "metadata": {"ideName": "antigravity", "extensionName": "antigravity", "locale": "en", "ideVersion": "unknown"},
@@ -1724,7 +1729,8 @@ async fn antigravity_respond(id: &str, request_id: &str, response: &Value) -> Re
         }
     }
 
-    let (token, ports) = crate::usage::antigravity_server()?;
+    let account = crate::accounts::antigravity_get_session_account(id);
+    let (token, ports) = crate::usage::antigravity_server(account.as_deref())?;
     let client = crate::usage::http();
     let body = json!({
         "metadata": {"ideName": "antigravity", "extensionName": "antigravity", "locale": "en", "ideVersion": "unknown"},
@@ -1761,8 +1767,9 @@ async fn antigravity_respond(id: &str, request_id: &str, response: &Value) -> Re
     if !success && !raw_answers.is_empty() {
         let msg = raw_answers.join("\n");
         let cid = id.to_string();
+        let acc = account.clone();
         tauri::async_runtime::spawn_blocking(move || {
-            let _ = run_agentapi("send-message", &[&cid, &msg], None);
+            let _ = run_agentapi("send-message", &[&cid, &msg], None, acc.as_deref());
         }).await.map_err(|e| e.to_string())?;
     }
 
@@ -1804,7 +1811,10 @@ fn interrupt(live: &Live, provider: &str, id: &str) -> Result<(), String> {
                 .request("turn/interrupt", json!({"threadId": id, "turnId": turn}))
                 .map(|_| ())
         }
-        "antigravity" => crate::usage::antigravity_cancel(id),
+        "antigravity" => {
+            let account = crate::accounts::antigravity_get_session_account(id);
+            crate::usage::antigravity_cancel(id, account.as_deref())
+        }
         _ => Err("provider inválido".into()),
     }
 }
@@ -1957,6 +1967,7 @@ pub async fn live_new(
     text: String,
     images: Vec<ImageIn>,
     options: Option<TurnOptions>,
+    account: Option<String>,
 ) -> Result<Session, String> {
     if text.trim().is_empty() && images.is_empty() {
         return Err("mensagem vazia".into());
@@ -1976,6 +1987,7 @@ pub async fn live_new(
                 &text,
                 &images,
                 &options.unwrap_or_default(),
+                account,
             ),
             "codex" => codex_new(
                 &app,
@@ -1994,6 +2006,7 @@ pub async fn live_new(
                 &text,
                 &images,
                 &options.unwrap_or_default(),
+                account,
             ),
             _ => Err("provider inválido".into()),
         }
@@ -2122,5 +2135,99 @@ pub fn shutdown(app: &AppHandle) {
     let codex = live.codex.lock().unwrap().take();
     if let Some(s) = codex {
         kill_tree(&s.child);
+    }
+}
+
+/// Move uma conversa do Claude para outra conta: o histórico (`<id>.jsonl` + pasta `<id>/`) vai para a pasta da
+/// conta destino e a próxima mensagem já roda lá, com o contexto inteiro e a cota dela. Só com o agente parado.
+#[tauri::command]
+pub async fn claude_move_account(app: AppHandle, id: String, account: Option<String>) -> Result<Session, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let live = app.state::<Live>();
+        let store = app.state::<Store>();
+        let mut s = find(&store, "claude", &id)?;
+        if s.account == account {
+            return Ok(s);
+        }
+        let dest = crate::accounts::claude_dir(account.as_deref());
+        if !dest.join(".credentials.json").exists() {
+            return Err(format!("Entre na conta {} antes de mover a conversa para ela.", account.as_deref().unwrap_or("principal")));
+        }
+        let busy = live.views.lock().unwrap().get(&format!("claude:{id}")).is_some_and(|v| v.busy);
+        if busy {
+            return Err("Espere o turno terminar para trocar de conta.".into());
+        }
+        busy_elsewhere(&s)?;
+        let src = s
+            .file
+            .clone()
+            .filter(|f| f.exists())
+            .or_else(|| crate::sessions::locate(&s))
+            .ok_or("não achei o histórico desta conversa")?;
+        // processo parado do Lume ainda aponta para a conta antiga: encerra; o próximo envio abre na nova
+        if let Some(p) = live.claude.lock().unwrap().remove(&id) {
+            kill_tree(&p.child);
+        }
+        let folder = src.parent().and_then(|p| p.file_name()).ok_or("caminho do histórico inválido")?;
+        let dir = dest.join("projects").join(folder);
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let to = dir.join(src.file_name().unwrap());
+        move_path(&src, &to)?;
+        let extra = src.with_extension(""); // pasta <id>/ (sub-agentes, resultados de ferramentas)
+        if extra.is_dir() {
+            move_path(&extra, &dir.join(extra.file_name().unwrap()))?;
+        }
+        s.account = account;
+        s.file = Some(to);
+        remember(&store, s.clone());
+        Ok(s)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// rename e, se falhar (outro disco), copia e apaga a origem só depois da cópia completa.
+fn move_path(from: &std::path::Path, to: &std::path::Path) -> Result<(), String> {
+    if std::fs::rename(from, to).is_ok() {
+        return Ok(());
+    }
+    if from.is_dir() {
+        copy_dir(from, to).map_err(|e| e.to_string())?;
+        std::fs::remove_dir_all(from).map_err(|e| e.to_string())
+    } else {
+        std::fs::copy(from, to).map_err(|e| e.to_string())?;
+        std::fs::remove_file(from).map_err(|e| e.to_string())
+    }
+}
+
+fn copy_dir(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(to)?;
+    for e in std::fs::read_dir(from)? {
+        let e = e?;
+        let target = to.join(e.file_name());
+        if e.path().is_dir() {
+            copy_dir(&e.path(), &target)?;
+        } else {
+            std::fs::copy(e.path(), target)?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod move_tests {
+    #[test]
+    fn move_path_leva_arquivo_e_pasta() {
+        let base = std::env::temp_dir().join(format!("lume-move-{}", std::process::id()));
+        let (a, b) = (base.join("a"), base.join("b"));
+        std::fs::create_dir_all(a.join("s1/sub")).unwrap();
+        std::fs::write(a.join("s1.jsonl"), "x").unwrap();
+        std::fs::write(a.join("s1/sub/t.txt"), "y").unwrap();
+        std::fs::create_dir_all(&b).unwrap();
+        super::move_path(&a.join("s1.jsonl"), &b.join("s1.jsonl")).unwrap();
+        super::move_path(&a.join("s1"), &b.join("s1")).unwrap();
+        assert!(!a.join("s1.jsonl").exists() && !a.join("s1").exists());
+        assert_eq!(std::fs::read_to_string(b.join("s1/sub/t.txt")).unwrap(), "y");
+        std::fs::remove_dir_all(base).unwrap();
     }
 }

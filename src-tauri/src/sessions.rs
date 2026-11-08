@@ -28,6 +28,9 @@ pub struct Session {
     pub updated: i64, // ms desde epoch
     #[serde(skip)]
     pub file: Option<PathBuf>,
+    /// Conta do Claude Code (pasta em ~/.lume/claude); None = principal (~/.claude) ou outro provider.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
 }
 
 /// role: user | assistant | tool. Em "tool": `text` = nome, `title` = o que o agente disse que ia fazer
@@ -216,8 +219,15 @@ fn sqlite_ro(path: &Path) -> rusqlite::Result<Connection> {
 // ---------- leitura das sessões ----------
 
 fn claude_sessions() -> Vec<Session> {
+    crate::accounts::claude_accounts()
+        .into_iter()
+        .flat_map(claude_sessions_of)
+        .collect()
+}
+
+fn claude_sessions_of(account: Option<String>) -> Vec<Session> {
     let mut out = vec![];
-    let Ok(dirs) = fs::read_dir(home().join(".claude").join("projects")) else {
+    let Ok(dirs) = fs::read_dir(crate::accounts::claude_dir(account.as_deref()).join("projects")) else {
         return out;
     };
     for dir in dirs.flatten() {
@@ -288,6 +298,7 @@ fn claude_sessions() -> Vec<Session> {
                 title,
                 updated: mtime_ms(&f),
                 file: Some(f),
+                account: account.clone(),
             });
         }
     }
@@ -309,6 +320,7 @@ fn codex_sessions() -> rusqlite::Result<Vec<Session>> {
     )?;
     let rows = q.query_map([], |r| {
         Ok(Session {
+            account: None,
             provider: "codex",
             id: r.get(0)?,
             project: norm_path(&r.get::<_, String>(1)?),
@@ -357,6 +369,7 @@ fn antigravity_sessions() -> rusqlite::Result<Vec<Session>> {
             None
         };
         Ok(Session {
+            account: crate::accounts::antigravity_get_session_account(&id),
             provider: "antigravity",
             id,
             project: uris
@@ -444,6 +457,7 @@ impl Session {
             .map(|d| d.as_millis() as i64)
             .unwrap_or(0);
         Session {
+            account: None,
             provider,
             id,
             project,
@@ -470,6 +484,9 @@ pub fn remember(store: &Store, s: Session) {
 /// `local_<id>.json` em claude-code-sessions/<conta>/<org>/ (mesmo registro que o claude://resume cria).
 /// A pasta e o modelo vêm do registro mais recente (conta em uso). O app lê os registros ao abrir.
 pub fn claude_desktop_register(s: &Session) {
+    if s.account.is_some() {
+        return; // o app desktop usa só a conta logada nele (a principal)
+    }
     let root = PathBuf::from(std::env::var("APPDATA").unwrap_or_default())
         .join("Claude")
         .join("claude-code-sessions");
@@ -510,7 +527,7 @@ pub fn claude_desktop_register(s: &Session) {
 /// Arquivo de uma sessão que ainda não estava na lista (criada agora pelo Lume).
 pub(crate) fn locate(s: &Session) -> Option<PathBuf> {
     match s.provider {
-        "claude" => fs::read_dir(home().join(".claude").join("projects"))
+        "claude" => fs::read_dir(crate::accounts::claude_dir(s.account.as_deref()).join("projects"))
             .ok()?
             .flatten()
             .map(|d| d.path().join(format!("{}.jsonl", s.id)))
@@ -1747,6 +1764,7 @@ fn launch(
     provider: &str,
     cwd: &str,
     session_id: Option<&str>,
+    account: Option<&str>,
 ) -> Result<(), String> {
     if !Path::new(cwd).is_dir() {
         return Err(format!("pasta não existe: {cwd}"));
@@ -1758,14 +1776,15 @@ fn launch(
         ("codex", Some(id)) => format!("codex://threads/{}", enc(id)),
         ("codex", None) => format!("codex://threads/new?path={}", enc(cwd)),
         ("antigravity", Some(id)) => {
-            let _ = crate::usage::antigravity_focus(id);
-            let exe = home()
-                .join("AppData")
-                .join("Local")
-                .join("Programs")
-                .join("Antigravity")
-                .join("Antigravity.exe");
+            let _ = crate::usage::antigravity_focus(id, account);
+            let exe = crate::accounts::antigravity_app_exe()
+                .ok_or("não achei o executável do Antigravity")?;
             let mut cmd = Command::new(exe);
+            if let Some(acc) = account {
+                let dir = crate::accounts::antigravity_dir(Some(acc));
+                cmd.arg(format!("--user-data-dir={}", dir.display()));
+            }
+            cmd.arg("--new-window");
             cmd.arg(cwd);
             hidden(&mut cmd)
                 .spawn()
@@ -1773,13 +1792,14 @@ fn launch(
             return Ok(());
         }
         ("antigravity", None) => {
-            let exe = home()
-                .join("AppData")
-                .join("Local")
-                .join("Programs")
-                .join("Antigravity")
-                .join("Antigravity.exe");
+            let exe = crate::accounts::antigravity_app_exe()
+                .ok_or("não achei o executável do Antigravity")?;
             let mut cmd = Command::new(exe);
+            if let Some(acc) = account {
+                let dir = crate::accounts::antigravity_dir(Some(acc));
+                cmd.arg(format!("--user-data-dir={}", dir.display()));
+            }
+            cmd.arg("--new-window");
             cmd.arg(cwd);
             hidden(&mut cmd)
                 .spawn()
@@ -1801,7 +1821,7 @@ pub async fn open_session(
     id: String,
 ) -> Result<(), String> {
     let s = find(&store, &provider, &id)?;
-    launch(&app, s.provider, &s.project, Some(&s.id))
+    launch(&app, s.provider, &s.project, Some(&s.id), s.account.as_deref())
 }
 
 #[tauri::command]
@@ -1811,7 +1831,7 @@ pub async fn new_session(
     project: String,
 ) -> Result<(), String> {
     // vale para projeto novo (botão "Novo projeto"); launch confere se a pasta existe
-    launch(&app, &provider, &project, None)
+    launch(&app, &provider, &project, None, None)
 }
 
 #[cfg(test)]
@@ -1855,6 +1875,7 @@ mod real_files {
             title: String::new(),
             updated: 0,
             file: None,
+            account: None,
         };
         let msgs = read_messages(&s, Path::new(file)).unwrap();
         let tools: Vec<_> = msgs.iter().filter(|m| m.role == "tool").collect();
